@@ -1,0 +1,3463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project Revenue Management</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+
+*{
+margin:0;
+padding:0;
+box-sizing:border-box;
+font-family:'Cambria',sans-serif;
+}
+
+body{
+background:#f3f4f6;
+overflow-x:hidden;
+}
+
+.sidebar{
+position:fixed;
+left:0;
+top:0;
+width:250px;
+height:100vh;
+background:#062b69;
+color:white;
+overflow:auto;
+z-index:100;
+}
+
+.logo{
+padding:20px;
+display:flex;
+align-items:center;
+gap:12px;
+border-bottom:1px solid rgba(255,255,255,.15);
+}
+
+.logo img{
+width:42px;
+height:42px;
+}
+
+.logo h1{
+font-size:22px;
+font-weight:700;
+}
+
+.logo p{
+font-size:12px;
+opacity:.7;
+}
+
+.sidebar ul{
+list-style:none;
+padding:15px;
+}
+
+.sidebar li{
+margin-bottom:6px;
+}
+
+.sidebar a{
+display:flex;
+align-items:center;
+gap:12px;
+padding:11px 14px;
+color:white;
+text-decoration:none;
+border-radius:8px;
+transition:.3s;
+font-size:15px;
+}
+
+.sidebar a:hover{
+background:#0f4ab4;
+}
+
+.sidebar a.active{
+background:#2563eb;
+}
+
+.main{
+margin-left:250px;
+min-height:100vh;
+}
+
+.header{
+height:78px;
+background:white;
+display:flex;
+align-items:center;
+justify-content:space-between;
+padding:0 30px;
+box-shadow:0 2px 8px rgba(0,0,0,.08);
+position:sticky;
+top:0;
+z-index:50;
+}
+
+.header-left{
+display:flex;
+align-items:center;
+gap:18px;
+}
+
+.header-left button{
+font-size:24px;
+background:none;
+border:none;
+cursor:pointer;
+}
+
+.header-title h2{
+font-size:32px;
+font-weight:700;
+color:#082c69;
+}
+
+.header-title p{
+font-size:14px;
+color:#777;
+margin-top:3px;
+}
+
+.header-right{
+display:flex;
+align-items:center;
+gap:15px;
+}
+
+.search-box{
+position:relative;
+}
+
+.search-box input{
+width:320px;
+padding:11px 15px 11px 45px;
+border:1px solid #d1d5db;
+border-radius:10px;
+outline:none;
+}
+
+.search-box svg{
+position:absolute;
+left:15px;
+top:12px;
+width:18px;
+height:18px;
+color:#888;
+}
+
+.action-btn{
+background:#062b69;
+color:white;
+padding:11px 20px;
+border:none;
+border-radius:8px;
+display:flex;
+align-items:center;
+gap:8px;
+cursor:pointer;
+font-weight:600;
+}
+
+.content{
+padding:25px;
+}
+
+.cards{
+display:grid;
+grid-template-columns:repeat(5,1fr);
+gap:20px;
+margin-bottom:25px;
+}
+
+.card{
+background:white;
+padding:20px;
+border-radius:14px;
+box-shadow:0 2px 8px rgba(0,0,0,.08);
+display:flex;
+align-items:center;
+gap:15px;
+}
+
+.card-icon{
+width:55px;
+height:55px;
+border-radius:12px;
+display:flex;
+align-items:center;
+justify-content:center;
+color:white;
+font-size:24px;
+}
+
+.blue{
+background:#2563eb;
+}
+
+.green{
+background:#16a34a;
+}
+
+.red{
+background:#dc2626;
+}
+
+.yellow{
+background:#d97706;
+}
+
+.purple{
+background:#7c3aed;
+}
+
+.orange{
+background:#ea580c;
+}
+
+.gray{
+background:#64748b;
+}
+
+.cyan{
+background:#0891b2;
+}
+
+.pink{
+background:#db2777;
+}
+
+.card small{
+display:block;
+color:#777;
+margin-bottom:5px;
+}
+
+.card h3{
+font-size:27px;
+font-weight:700;
+}
+
+.filters{
+background:white;
+padding:20px;
+border-radius:14px;
+box-shadow:0 2px 8px rgba(0,0,0,.08);
+margin-bottom:25px;
+display:grid;
+grid-template-columns:repeat(5,1fr);
+gap:15px;
+}
+
+.filters select,
+.filters input{
+width:100%;
+padding:11px;
+border:1px solid #d1d5db;
+border-radius:8px;
+outline:none;
+}
+
+.filters button{
+background:#062b69;
+color:white;
+border:none;
+padding:11px;
+border-radius:8px;
+cursor:pointer;
+font-weight:600;
+}
+
+.grid-layout{
+display:grid;
+grid-template-columns:420px 1fr 420px;
+gap:20px;
+align-items:start;
+}
+
+.panel{
+background:white;
+border-radius:14px;
+padding:20px;
+box-shadow:0 2px 8px rgba(0,0,0,.08);
+margin-bottom:20px;
+}
+
+.panel h3{
+font-size:22px;
+margin-bottom:18px;
+font-weight:700;
+color:#062b69;
+}
+
+.form-grid{
+display:grid;
+grid-template-columns:1fr;
+gap:15px;
+}
+
+.form-group label{
+display:block;
+font-size:14px;
+margin-bottom:6px;
+font-weight:600;
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea{
+width:100%;
+padding:11px;
+border:1px solid #d1d5db;
+border-radius:8px;
+outline:none;
+}
+
+.form-buttons{
+display:flex;
+gap:10px;
+margin-top:15px;
+}
+
+.btn-primary{
+background:#062b69;
+color:white;
+padding:10px 18px;
+border:none;
+border-radius:8px;
+cursor:pointer;
+}
+
+.btn-secondary{
+background:#e5e7eb;
+padding:10px 18px;
+border:none;
+border-radius:8px;
+cursor:pointer;
+}
+
+.table-container{
+overflow:auto;
+border:1px solid #e5e7eb;
+border-radius:10px;
+}
+
+table{
+width:100%;
+border-collapse:collapse;
+}
+
+thead{
+background:#062b69;
+color:white;
+}
+
+th,
+td{
+padding:12px;
+border:1px solid #e5e7eb;
+text-align:left;
+white-space:nowrap;
+font-size:14px;
+}
+
+tbody tr:hover{
+background:#f8fafc;
+}
+
+.status-paid{
+background:#dcfce7;
+color:#166534;
+padding:4px 10px;
+border-radius:20px;
+font-size:12px;
+}
+
+.status-partial{
+background:#ffedd5;
+color:#c2410c;
+padding:4px 10px;
+border-radius:20px;
+font-size:12px;
+}
+
+.status-pending{
+background:#dbeafe;
+color:#1d4ed8;
+padding:4px 10px;
+border-radius:20px;
+font-size:12px;
+}
+
+.chart-box{
+background:white;
+padding:18px;
+border-radius:14px;
+box-shadow:0 2px 8px rgba(0,0,0,.08);
+margin-bottom:20px;
+}
+
+.chart-box h4{
+margin-bottom:15px;
+font-size:18px;
+font-weight:700;
+}
+
+canvas{
+width:100%;
+}
+
+.footer{
+margin-top:40px;
+text-align:center;
+padding:25px;
+color:#666;
+font-size:14px;
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="sidebar">
+
+<div class="logo">
+
+<img src="acaciabooks-logo.png">
+
+<div>
+
+<h1>Acacia Books</h1>
+
+<p>Accounting System</p>
+
+</div>
+
+</div>
+
+<ul>
+
+<li><a href="#">Dashboard</a></li>
+
+<li><a href="#">Customers</a></li>
+
+<li><a href="#">Projects</a></li>
+
+<li><a href="#">Estimates</a></li>
+
+<li><a href="#">Invoices</a></li>
+
+<li><a class="active" href="#">Revenue</a></li>
+
+<li><a href="#">Payments</a></li>
+
+<li><a href="#">Expenses</a></li>
+
+<li><a href="#">Banking</a></li>
+
+<li><a href="#">Reports</a></li>
+
+<li><a href="#">AI Insights</a></li>
+
+<li><a href="#">Settings</a></li>
+
+<li><a href="#">Users</a></li>
+
+<li><a href="#">Backup</a></li>
+
+<li><a href="#">Audit Trail</a></li>
+
+<li><a href="#">Support</a></li>
+
+<li><a href="#">Help</a></li>
+
+</ul>
+
+</div>
+
+<div class="main">
+
+<div class="header">
+
+<div class="header-left">
+
+<button>☰</button>
+
+<div class="header-title">
+
+<h2>💰 Project Revenue Management</h2>
+
+<p>Manage Project Revenue, Collections and Revenue Analytics</p>
+
+</div>
+
+</div>
+
+<div class="header-right">
+
+<div class="search-box">
+
+<input type="text" placeholder="Search Revenue">
+
+</div>
+
+<button class="action-btn">
+
+Revenue Actions
+
+▼
+
+</button>
+
+</div>
+
+</div>
+
+<div class="content">
+<div class="cards">
+
+<div class="card">
+<div class="card-icon blue">💵</div>
+<div>
+<small>Total Revenue</small>
+<h3 id="totalRevenue">KES 12,850,000</h3>
+</div>
+</div>
+
+<div class="card">
+<div class="card-icon green">✔</div>
+<div>
+<small>Collected</small>
+<h3 id="collectedRevenue">KES 8,950,000</h3>
+</div>
+</div>
+
+<div class="card">
+<div class="card-icon red">!</div>
+<div>
+<small>Outstanding</small>
+<h3 id="outstandingRevenue">KES 3,900,000</h3>
+</div>
+</div>
+
+<div class="card">
+<div class="card-icon yellow">%</div>
+<div>
+<small>Collection Rate</small>
+<h3 id="collectionRate">69.65%</h3>
+</div>
+</div>
+
+<div class="card">
+<div class="card-icon purple">📊</div>
+<div>
+<small>Average Revenue</small>
+<h3 id="averageRevenue">KES 321,250</h3>
+</div>
+</div>
+
+<div class="card">
+<div class="card-icon blue">📄</div>
+<div>
+<small>Paid Invoices</small>
+<h3 id="paidInvoices">28</h3>
+</div>
+</div>
+
+<div class="card">
+<div class="card-icon orange">🟠</div>
+<div>
+<small>Partial</small>
+<h3 id="partialInvoices">14</h3>
+</div>
+</div>
+
+<div class="card">
+<div class="card-icon gray">⏳</div>
+<div>
+<small>Unpaid</small>
+<h3 id="unpaidInvoices">12</h3>
+</div>
+</div>
+
+<div class="card">
+<div class="card-icon cyan">👤</div>
+<div>
+<small>Highest Customer</small>
+<h3 id="highestCustomer">ABC Builders Ltd</h3>
+</div>
+</div>
+
+<div class="card">
+<div class="card-icon pink">🏗</div>
+<div>
+<small>Highest Project</small>
+<h3 id="highestProject">Westlands Heights</h3>
+</div>
+</div>
+
+</div>
+
+<div class="filters">
+
+<select id="customerFilter">
+<option>All Customers</option>
+</select>
+
+<select id="projectFilter">
+<option>All Projects</option>
+</select>
+
+<select id="statusFilter">
+<option>All Status</option>
+<option>Paid</option>
+<option>Partial</option>
+<option>Pending</option>
+<option>Overdue</option>
+</select>
+
+<select id="bankFilter">
+<option>All Banks</option>
+</select>
+
+<select id="paymentFilter">
+<option>Payment Method</option>
+<option>Cash</option>
+<option>Bank Transfer</option>
+<option>Cheque</option>
+<option>MPESA</option>
+<option>EFT</option>
+<option>RTGS</option>
+<option>Credit Card</option>
+</select>
+
+<input type="date" id="fromDate">
+
+<input type="date" id="toDate">
+
+<input type="number" placeholder="Minimum Amount">
+
+<input type="number" placeholder="Maximum Amount">
+
+<button>Apply Filters</button>
+
+</div>
+
+<div class="grid-layout">
+
+<div class="panel">
+
+<h3>Add / Edit Revenue</h3>
+
+<div class="form-grid">
+
+<div class="form-group">
+<label>Date</label>
+<input type="date" id="revenueDate">
+</div>
+
+<div class="form-group">
+<label>Customer</label>
+<select id="customer">
+<option>Select Customer</option>
+</select>
+</div>
+
+<div class="form-group">
+<label>Project</label>
+<select id="project">
+<option>Select Project</option>
+</select>
+</div>
+
+<div class="form-group">
+<label>Invoice</label>
+<select id="invoice">
+<option>Select Invoice</option>
+</select>
+</div>
+
+<div class="form-group">
+<label>Description</label>
+<textarea rows="3"></textarea>
+</div>
+
+<div class="form-group">
+<label>Amount (KES)</label>
+<input type="number">
+</div>
+
+<div class="form-group">
+<label>Payment Method</label>
+<select>
+<option>Cash</option>
+<option>Bank Transfer</option>
+<option>Cheque</option>
+<option>MPESA</option>
+<option>EFT</option>
+<option>RTGS</option>
+<option>Credit Card</option>
+</select>
+</div>
+
+<div class="form-group">
+<label>Bank</label>
+<select>
+<option>Select Bank</option>
+</select>
+</div>
+
+<div class="form-group">
+<label>Reference Number</label>
+<input type="text">
+</div>
+
+<div class="form-group">
+<label>Status</label>
+<select>
+<option>Paid</option>
+<option>Partial</option>
+<option>Pending</option>
+<option>Overdue</option>
+</select>
+</div>
+
+<div class="form-group">
+<label>Notes</label>
+<textarea rows="4"></textarea>
+</div>
+
+<div class="form-buttons">
+
+<button class="btn-primary">
+Save Revenue
+</button>
+
+<button class="btn-secondary">
+Reset
+</button>
+
+<button class="btn-secondary">
+Print
+</button>
+
+</div>
+
+</div>
+
+</div>
+
+<div class="panel">
+
+<h3>Revenue Register</h3>
+
+<div class="table-container">
+
+<table>
+
+<thead>
+
+<tr>
+
+<th>#</th>
+
+<th>Date</th>
+
+<th>Receipt</th>
+
+<th>Customer</th>
+
+<th>Project</th>
+
+<th>Description</th>
+
+<th>Amount</th>
+
+<th>Collected</th>
+
+<th>Outstanding</th>
+
+<th>Status</th>
+
+<th>Method</th>
+
+<th>Actions</th>
+
+</tr>
+
+</thead>
+
+<tbody id="revenueTable">
+<tr>
+<td>1</td>
+<td>2026-06-30</td>
+<td>REV00001</td>
+<td>ABC Builders Ltd</td>
+<td>Westlands Heights</td>
+<td>Contract Payment</td>
+<td>KES 850,000</td>
+<td>KES 850,000</td>
+<td>KES 0</td>
+<td><span class="status-paid">Paid</span></td>
+<td>Bank Transfer</td>
+<td>
+<button class="btn-primary">View</button>
+<button class="btn-secondary">Edit</button>
+<button class="btn-secondary">Delete</button>
+</td>
+</tr>
+
+<tr>
+<td>2</td>
+<td>2026-06-28</td>
+<td>REV00002</td>
+<td>Prime Holdings</td>
+<td>Office Complex</td>
+<td>Progress Payment</td>
+<td>KES 425,000</td>
+<td>KES 300,000</td>
+<td>KES 125,000</td>
+<td><span class="status-partial">Partial</span></td>
+<td>MPESA</td>
+<td>
+<button class="btn-primary">View</button>
+<button class="btn-secondary">Edit</button>
+<button class="btn-secondary">Delete</button>
+</td>
+</tr>
+
+<tr>
+<td>3</td>
+<td>2026-06-27</td>
+<td>REV00003</td>
+<td>Green City Ltd</td>
+<td>Residential Estate</td>
+<td>Deposit</td>
+<td>KES 1,200,000</td>
+<td>KES 0</td>
+<td>KES 1,200,000</td>
+<td><span class="status-pending">Pending</span></td>
+<td>Cheque</td>
+<td>
+<button class="btn-primary">View</button>
+<button class="btn-secondary">Edit</button>
+<button class="btn-secondary">Delete</button>
+</td>
+</tr>
+
+<tr>
+<td>4</td>
+<td>2026-06-25</td>
+<td>REV00004</td>
+<td>Blue Stone Ltd</td>
+<td>Shopping Mall</td>
+<td>Final Payment</td>
+<td>KES 2,650,000</td>
+<td>KES 2,650,000</td>
+<td>KES 0</td>
+<td><span class="status-paid">Paid</span></td>
+<td>EFT</td>
+<td>
+<button class="btn-primary">View</button>
+<button class="btn-secondary">Edit</button>
+<button class="btn-secondary">Delete</button>
+</td>
+</tr>
+
+<tr>
+<td>5</td>
+<td>2026-06-22</td>
+<td>REV00005</td>
+<td>Acacia Construction</td>
+<td>Apartment Block</td>
+<td>Advance Payment</td>
+<td>KES 690,000</td>
+<td>KES 500,000</td>
+<td>KES 190,000</td>
+<td><span class="status-partial">Partial</span></td>
+<td>Cash</td>
+<td>
+<button class="btn-primary">View</button>
+<button class="btn-secondary">Edit</button>
+<button class="btn-secondary">Delete</button>
+</td>
+</tr>
+
+</tbody>
+
+<tfoot>
+
+<tr>
+
+<th colspan="6" style="text-align:right;">
+Totals
+</th>
+
+<th>KES 5,815,000</th>
+
+<th>KES 4,300,000</th>
+
+<th>KES 1,515,000</th>
+
+<th colspan="3"></th>
+
+</tr>
+
+</tfoot>
+
+</table>
+
+</div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-top:20px;">
+
+<div>
+
+Showing
+<strong>1-5</strong>
+of
+<strong>125</strong>
+Records
+
+</div>
+
+<div style="display:flex;gap:10px;">
+
+<button class="btn-secondary">First</button>
+
+<button class="btn-secondary">Previous</button>
+
+<button class="btn-primary">1</button>
+
+<button class="btn-secondary">Next</button>
+
+<button class="btn-secondary">Last</button>
+
+</div>
+
+</div>
+
+</div>
+
+<div>
+
+<div class="chart-box">
+
+<h4>Monthly Revenue Trend</h4>
+
+<canvas id="monthlyRevenueChart"></canvas>
+
+</div>
+
+<div class="chart-box">
+
+<h4>Revenue Status</h4>
+
+<canvas id="statusChart"></canvas>
+
+</div>
+
+<div class="chart-box">
+
+<h4>Revenue by Customer</h4>
+
+<canvas id="customerChart"></canvas>
+
+</div>
+
+<div class="chart-box">
+
+<h4>Revenue by Project</h4>
+
+<canvas id="projectChart"></canvas>
+
+</div>
+
+</div>
+
+</div>
+<div class="panel">
+
+<h3>Revenue Analytics Dashboard</h3>
+
+<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:20px;">
+
+<div class="chart-box">
+<h4>Quarterly Revenue</h4>
+<canvas id="quarterlyRevenueChart"></canvas>
+</div>
+
+<div class="chart-box">
+<h4>Annual Revenue</h4>
+<canvas id="annualRevenueChart"></canvas>
+</div>
+
+<div class="chart-box">
+<h4>Revenue by Bank</h4>
+<canvas id="bankRevenueChart"></canvas>
+</div>
+
+<div class="chart-box">
+<h4>Revenue by Payment Method</h4>
+<canvas id="paymentMethodChart"></canvas>
+</div>
+
+<div class="chart-box" style="grid-column:1/3;">
+<h4>Revenue Forecast</h4>
+<canvas id="forecastChart"></canvas>
+</div>
+
+</div>
+
+</div>
+
+<div class="panel">
+
+<h3>Top Customers</h3>
+
+<table>
+
+<thead>
+
+<tr>
+
+<th>Customer</th>
+
+<th>Total Revenue</th>
+
+<th>Invoices</th>
+
+<th>Collection %</th>
+
+</tr>
+
+</thead>
+
+<tbody>
+
+<tr>
+
+<td>ABC Builders Ltd</td>
+
+<td>KES 3,250,000</td>
+
+<td>14</td>
+
+<td>100%</td>
+
+</tr>
+
+<tr>
+
+<td>Prime Holdings</td>
+
+<td>KES 2,900,000</td>
+
+<td>11</td>
+
+<td>89%</td>
+
+</tr>
+
+<tr>
+
+<td>Blue Stone Ltd</td>
+
+<td>KES 2,600,000</td>
+
+<td>9</td>
+
+<td>100%</td>
+
+</tr>
+
+<tr>
+
+<td>Green City Ltd</td>
+
+<td>KES 1,850,000</td>
+
+<td>8</td>
+
+<td>76%</td>
+
+</tr>
+
+<tr>
+
+<td>Acacia Construction</td>
+
+<td>KES 1,200,000</td>
+
+<td>6</td>
+
+<td>84%</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+</div>
+
+<div class="panel">
+
+<h3>Top Projects</h3>
+
+<table>
+
+<thead>
+
+<tr>
+
+<th>Project</th>
+
+<th>Revenue</th>
+
+<th>Status</th>
+
+</tr>
+
+</thead>
+
+<tbody>
+
+<tr>
+
+<td>Westlands Heights</td>
+
+<td>KES 4,100,000</td>
+
+<td>Completed</td>
+
+</tr>
+
+<tr>
+
+<td>Shopping Mall</td>
+
+<td>KES 3,500,000</td>
+
+<td>Completed</td>
+
+</tr>
+
+<tr>
+
+<td>Office Complex</td>
+
+<td>KES 2,450,000</td>
+
+<td>Active</td>
+
+</tr>
+
+<tr>
+
+<td>Residential Estate</td>
+
+<td>KES 2,000,000</td>
+
+<td>Active</td>
+
+</tr>
+
+<tr>
+
+<td>Apartment Block</td>
+
+<td>KES 1,600,000</td>
+
+<td>Ongoing</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+</div>
+
+<div class="panel">
+
+<h3>Monthly Revenue Summary</h3>
+
+<table>
+
+<thead>
+
+<tr>
+
+<th>Month</th>
+
+<th>Invoices</th>
+
+<th>Revenue</th>
+
+<th>Collected</th>
+
+<th>Outstanding</th>
+
+<th>Growth</th>
+
+</tr>
+
+</thead>
+
+<tbody>
+
+<tr>
+
+<td>January</td>
+
+<td>12</td>
+
+<td>KES 850,000</td>
+
+<td>KES 800,000</td>
+
+<td>KES 50,000</td>
+
+<td>5%</td>
+
+</tr>
+
+<tr>
+
+<td>February</td>
+
+<td>15</td>
+
+<td>KES 1,120,000</td>
+
+<td>KES 1,040,000</td>
+
+<td>KES 80,000</td>
+
+<td>12%</td>
+
+</tr>
+
+<tr>
+
+<td>March</td>
+
+<td>18</td>
+
+<td>KES 1,560,000</td>
+
+<td>KES 1,480,000</td>
+
+<td>KES 80,000</td>
+
+<td>18%</td>
+
+</tr>
+
+<tr>
+
+<td>April</td>
+
+<td>20</td>
+
+<td>KES 1,820,000</td>
+
+<td>KES 1,700,000</td>
+
+<td>KES 120,000</td>
+
+<td>15%</td>
+
+</tr>
+
+<tr>
+
+<td>May</td>
+
+<td>24</td>
+
+<td>KES 2,300,000</td>
+
+<td>KES 2,050,000</td>
+
+<td>KES 250,000</td>
+
+<td>26%</td>
+
+</tr>
+
+<tr>
+
+<td>June</td>
+
+<td>27</td>
+
+<td>KES 3,200,000</td>
+
+<td>KES 2,850,000</td>
+
+<td>KES 350,000</td>
+
+<td>39%</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+</div>
+<div class="panel">
+
+<h3>Revenue by Bank</h3>
+
+<table>
+
+<thead>
+
+<tr>
+
+<th>Bank</th>
+
+<th>Transactions</th>
+
+<th>Revenue</th>
+
+<th>Percentage</th>
+
+</tr>
+
+</thead>
+
+<tbody>
+
+<tr>
+<td>Equity Bank</td>
+<td>28</td>
+<td>KES 3,850,000</td>
+<td>30%</td>
+</tr>
+
+<tr>
+<td>KCB Bank</td>
+<td>22</td>
+<td>KES 2,950,000</td>
+<td>23%</td>
+</tr>
+
+<tr>
+<td>Co-operative Bank</td>
+<td>17</td>
+<td>KES 2,180,000</td>
+<td>17%</td>
+</tr>
+
+<tr>
+<td>NCBA Bank</td>
+<td>13</td>
+<td>KES 1,760,000</td>
+<td>14%</td>
+</tr>
+
+<tr>
+<td>Stanbic Bank</td>
+<td>11</td>
+<td>KES 1,220,000</td>
+<td>10%</td>
+</tr>
+
+<tr>
+<td>ABSA Bank</td>
+<td>9</td>
+<td>KES 890,000</td>
+<td>6%</td>
+</tr>
+
+</tbody>
+
+</table>
+
+</div>
+
+<div class="panel">
+
+<h3>Revenue by Payment Method</h3>
+
+<table>
+
+<thead>
+
+<tr>
+
+<th>Method</th>
+
+<th>Transactions</th>
+
+<th>Revenue</th>
+
+<th>Percentage</th>
+
+</tr>
+
+</thead>
+
+<tbody>
+
+<tr>
+<td>Bank Transfer</td>
+<td>41</td>
+<td>KES 6,300,000</td>
+<td>49%</td>
+</tr>
+
+<tr>
+<td>MPESA</td>
+<td>24</td>
+<td>KES 2,500,000</td>
+<td>19%</td>
+</tr>
+
+<tr>
+<td>Cash</td>
+<td>18</td>
+<td>KES 1,400,000</td>
+<td>11%</td>
+</tr>
+
+<tr>
+<td>Cheque</td>
+<td>15</td>
+<td>KES 1,200,000</td>
+<td>9%</td>
+</tr>
+
+<tr>
+<td>EFT</td>
+<td>12</td>
+<td>KES 980,000</td>
+<td>8%</td>
+</tr>
+
+<tr>
+<td>Credit Card</td>
+<td>8</td>
+<td>KES 470,000</td>
+<td>4%</td>
+</tr>
+
+</tbody>
+
+</table>
+
+</div>
+
+<div class="panel">
+
+<h3>Revenue Performance Indicators</h3>
+
+<div class="cards">
+
+<div class="card">
+<div class="card-icon green">💰</div>
+<div>
+<small>Largest Payment</small>
+<h3>KES 2,650,000</h3>
+</div>
+</div>
+
+<div class="card">
+<div class="card-icon blue">📈</div>
+<div>
+<small>Average Payment</small>
+<h3>KES 325,000</h3>
+</div>
+</div>
+
+<div class="card">
+<div class="card-icon purple">⚡</div>
+<div>
+<small>Collection Efficiency</small>
+<h3>92.8%</h3>
+</div>
+</div>
+
+<div class="card">
+<div class="card-icon orange">🚀</div>
+<div>
+<small>Revenue Growth</small>
+<h3>18.4%</h3>
+</div>
+</div>
+
+</div>
+
+</div>
+
+<div class="panel">
+
+<h3>Revenue Reports</h3>
+
+<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;">
+
+<button class="btn-primary">Revenue Register</button>
+
+<button class="btn-primary">Daily Revenue</button>
+
+<button class="btn-primary">Monthly Revenue</button>
+
+<button class="btn-primary">Annual Revenue</button>
+
+<button class="btn-primary">Forecast Report</button>
+
+<button class="btn-primary">Customer Revenue</button>
+
+<button class="btn-primary">Project Revenue</button>
+
+<button class="btn-primary">Bank Revenue</button>
+
+<button class="btn-primary">Payment Methods</button>
+
+<button class="btn-primary">Export Excel</button>
+
+<button class="btn-primary">Export CSV</button>
+
+<button class="btn-primary">Download PDF</button>
+
+<button class="btn-primary">Print Report</button>
+
+<button class="btn-primary">Email Report</button>
+
+<button class="btn-primary">Refresh Dashboard</button>
+
+</div>
+
+</div>
+<div class="panel">
+
+<h3>AI Revenue Insights</h3>
+
+<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:20px;">
+
+<button class="btn-primary">Generate Insights</button>
+
+<button class="btn-primary">Revenue Forecast</button>
+
+<button class="btn-primary">Revenue Risks</button>
+
+<button class="btn-primary">Collection Recommendations</button>
+
+<button class="btn-primary">Refresh Dashboard</button>
+
+</div>
+
+<div class="cards">
+
+<div class="card">
+
+<div class="card-icon green">📈</div>
+
+<div>
+
+<small>Projected Month End Revenue</small>
+
+<h3>KES 14,800,000</h3>
+
+</div>
+
+</div>
+
+<div class="card">
+
+<div class="card-icon blue">✔</div>
+
+<div>
+
+<small>Collection Probability</small>
+
+<h3>94%</h3>
+
+</div>
+
+</div>
+
+<div class="card">
+
+<div class="card-icon red">⚠</div>
+
+<div>
+
+<small>Revenue Risk Score</small>
+
+<h3>12%</h3>
+
+</div>
+
+</div>
+
+<div class="card">
+
+<div class="card-icon purple">🎯</div>
+
+<div>
+
+<small>Forecast Accuracy</small>
+
+<h3>97%</h3>
+
+</div>
+
+</div>
+
+</div>
+
+<div style="margin-top:25px;border:1px solid #e5e7eb;border-radius:10px;padding:20px;line-height:1.8;">
+
+<h4 style="margin-bottom:15px;font-size:20px;font-weight:700;color:#062b69;">
+
+AI Summary
+
+</h4>
+
+<p>
+
+Revenue has increased steadily during the current financial period.
+Collection efficiency remains above ninety percent with most customers
+paying within agreed timelines. Bank Transfers continue to contribute
+the largest percentage of revenue while MPESA remains the fastest
+growing payment channel. Two projects have outstanding balances
+requiring follow-up before month end.
+
+</p>
+
+</div>
+
+</div>
+
+<div class="panel">
+
+<h3>Revenue Timeline</h3>
+
+<div style="display:flex;flex-direction:column;gap:18px;">
+
+<div style="display:flex;gap:15px;">
+
+<div style="width:14px;height:14px;border-radius:50%;background:#2563eb;margin-top:8px;"></div>
+
+<div>
+
+<strong>30 Jun 2026</strong>
+
+<p>Revenue REV00001 recorded for Westlands Heights.</p>
+
+</div>
+
+</div>
+
+<div style="display:flex;gap:15px;">
+
+<div style="width:14px;height:14px;border-radius:50%;background:#16a34a;margin-top:8px;"></div>
+
+<div>
+
+<strong>29 Jun 2026</strong>
+
+<p>Invoice INV00024 fully settled.</p>
+
+</div>
+
+</div>
+
+<div style="display:flex;gap:15px;">
+
+<div style="width:14px;height:14px;border-radius:50%;background:#f59e0b;margin-top:8px;"></div>
+
+<div>
+
+<strong>28 Jun 2026</strong>
+
+<p>Partial payment received from Prime Holdings.</p>
+
+</div>
+
+</div>
+
+<div style="display:flex;gap:15px;">
+
+<div style="width:14px;height:14px;border-radius:50%;background:#ef4444;margin-top:8px;"></div>
+
+<div>
+
+<strong>27 Jun 2026</strong>
+
+<p>Outstanding invoice flagged for follow-up.</p>
+
+</div>
+
+</div>
+
+</div>
+
+</div>
+
+<div class="panel">
+
+<h3>Recent Revenue Transactions</h3>
+
+<table>
+
+<thead>
+
+<tr>
+
+<th>Date</th>
+
+<th>Receipt</th>
+
+<th>Customer</th>
+
+<th>Project</th>
+
+<th>Amount</th>
+
+<th>Status</th>
+
+</tr>
+
+</thead>
+
+<tbody>
+
+<tr>
+
+<td>30 Jun 2026</td>
+
+<td>REV00001</td>
+
+<td>ABC Builders Ltd</td>
+
+<td>Westlands Heights</td>
+
+<td>KES 850,000</td>
+
+<td><span class="status-paid">Paid</span></td>
+
+</tr>
+
+<tr>
+
+<td>29 Jun 2026</td>
+
+<td>REV00002</td>
+
+<td>Prime Holdings</td>
+
+<td>Office Complex</td>
+
+<td>KES 300,000</td>
+
+<td><span class="status-partial">Partial</span></td>
+
+</tr>
+
+<tr>
+
+<td>28 Jun 2026</td>
+
+<td>REV00003</td>
+
+<td>Green City Ltd</td>
+
+<td>Residential Estate</td>
+
+<td>KES 1,200,000</td>
+
+<td><span class="status-pending">Pending</span></td>
+
+</tr>
+
+<tr>
+
+<td>27 Jun 2026</td>
+
+<td>REV00004</td>
+
+<td>Blue Stone Ltd</td>
+
+<td>Shopping Mall</td>
+
+<td>KES 2,650,000</td>
+
+<td><span class="status-paid">Paid</span></td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+</div>
+<div class="panel">
+
+<h3>Revenue Activity Log</h3>
+
+<div style="max-height:350px;overflow:auto;border:1px solid #e5e7eb;border-radius:10px;padding:15px;">
+
+<div style="padding:12px 0;border-bottom:1px solid #e5e7eb;">
+<strong>30 Jun 2026 09:45</strong>
+<p>Revenue REV00001 created by Administrator.</p>
+</div>
+
+<div style="padding:12px 0;border-bottom:1px solid #e5e7eb;">
+<strong>30 Jun 2026 10:18</strong>
+<p>Receipt printed successfully.</p>
+</div>
+
+<div style="padding:12px 0;border-bottom:1px solid #e5e7eb;">
+<strong>30 Jun 2026 11:03</strong>
+<p>Invoice INV00024 marked as Paid.</p>
+</div>
+
+<div style="padding:12px 0;border-bottom:1px solid #e5e7eb;">
+<strong>30 Jun 2026 12:40</strong>
+<p>Revenue dashboard refreshed.</p>
+</div>
+
+<div style="padding:12px 0;border-bottom:1px solid #e5e7eb;">
+<strong>30 Jun 2026 13:20</strong>
+<p>Monthly report exported to PDF.</p>
+</div>
+
+<div style="padding:12px 0;">
+<strong>30 Jun 2026 14:10</strong>
+<p>AI Revenue Insight generated.</p>
+</div>
+
+</div>
+
+</div>
+
+<div id="viewRevenueModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);align-items:center;justify-content:center;z-index:999;">
+
+<div style="background:#fff;width:700px;max-width:95%;border-radius:12px;padding:25px;">
+
+<h2 style="font-size:24px;font-weight:700;color:#062b69;margin-bottom:20px;">
+
+Revenue Details
+
+</h2>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+
+<div><strong>Receipt</strong><p id="viewReceipt"></p></div>
+
+<div><strong>Date</strong><p id="viewDate"></p></div>
+
+<div><strong>Customer</strong><p id="viewCustomer"></p></div>
+
+<div><strong>Project</strong><p id="viewProject"></p></div>
+
+<div><strong>Amount</strong><p id="viewAmount"></p></div>
+
+<div><strong>Status</strong><p id="viewStatus"></p></div>
+
+<div style="grid-column:1/3;">
+<strong>Description</strong>
+<p id="viewDescription"></p>
+</div>
+
+</div>
+
+<div style="margin-top:25px;text-align:right;">
+
+<button class="btn-primary" onclick="document.getElementById('viewRevenueModal').style.display='none'">
+
+Close
+
+</button>
+
+</div>
+
+</div>
+
+</div>
+
+<div id="deleteModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);align-items:center;justify-content:center;z-index:999;">
+
+<div style="background:#fff;padding:30px;border-radius:12px;width:420px;text-align:center;">
+
+<h2 style="font-size:22px;margin-bottom:15px;">
+
+Delete Revenue
+
+</h2>
+
+<p style="margin-bottom:25px;">
+
+Are you sure you want to delete this revenue record?
+
+</p>
+
+<div style="display:flex;justify-content:center;gap:15px;">
+
+<button class="btn-secondary" onclick="document.getElementById('deleteModal').style.display='none'">
+
+Cancel
+
+</button>
+
+<button class="btn-primary">
+
+Delete
+
+</button>
+
+</div>
+
+</div>
+
+</div>
+
+<div id="loadingScreen" style="display:none;position:fixed;inset:0;background:white;align-items:center;justify-content:center;z-index:1000;">
+
+<div style="text-align:center;">
+
+<div style="width:70px;height:70px;border:8px solid #dbeafe;border-top:8px solid #062b69;border-radius:50%;animation:spin 1s linear infinite;"></div>
+
+<h2 style="margin-top:20px;color:#062b69;">
+
+Loading Revenue Dashboard...
+
+</h2>
+
+</div>
+
+</div>
+
+<div id="toast" style="display:none;position:fixed;right:25px;bottom:25px;background:#062b69;color:#fff;padding:15px 22px;border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,.2);z-index:1001;">
+
+Operation Completed Successfully
+
+</div>
+
+<footer class="footer">
+
+© 2026 Acacia Books ERP • Project Revenue Management Module
+
+</footer>
+
+</div>
+
+</div>
+
+<style>
+
+@keyframes spin{
+
+0%{
+transform:rotate(0deg);
+}
+
+100%{
+transform:rotate(360deg);
+}
+
+}
+
+</style>
+<script>
+    const revenueKey="projectRevenue";
+
+let revenueData=JSON.parse(localStorage.getItem(revenueKey)||"[]");
+
+let editingIndex=-1;
+
+const revenueTable=document.getElementById("revenueTable");
+
+const totalRevenue=document.getElementById("totalRevenue");
+
+const collectedRevenue=document.getElementById("collectedRevenue");
+
+const outstandingRevenue=document.getElementById("outstandingRevenue");
+
+const collectionRate=document.getElementById("collectionRate");
+
+const averageRevenue=document.getElementById("averageRevenue");
+
+const paidInvoices=document.getElementById("paidInvoices");
+
+const partialInvoices=document.getElementById("partialInvoices");
+
+const unpaidInvoices=document.getElementById("unpaidInvoices");
+
+const highestCustomer=document.getElementById("highestCustomer");
+
+const highestProject=document.getElementById("highestProject");
+
+const revenueDate=document.getElementById("revenueDate");
+
+const customer=document.getElementById("customer");
+
+const project=document.getElementById("project");
+
+const invoice=document.getElementById("invoice");
+
+function saveRevenueStorage(){
+
+localStorage.setItem(revenueKey,JSON.stringify(revenueData));
+
+}
+
+function currency(v){
+
+return "KES "+Number(v||0).toLocaleString();
+
+}
+
+function receiptNo(){
+
+return "REV"+String(Date.now()).slice(-6);
+
+}
+
+function resetRevenueForm(){
+
+editingIndex=-1;
+
+if(revenueDate)revenueDate.value="";
+
+if(customer)customer.selectedIndex=0;
+
+if(project)project.selectedIndex=0;
+
+if(invoice)invoice.selectedIndex=0;
+
+document.querySelectorAll("input[type='number']").forEach(e=>e.value="");
+
+document.querySelectorAll("textarea").forEach(e=>e.value="");
+
+document.querySelectorAll("select").forEach(e=>{
+
+if(!e.id)e.selectedIndex=0;
+
+});
+
+}
+
+function loadCustomers(){
+
+const list=JSON.parse(localStorage.getItem("customers")||"[]");
+
+if(!customer)return;
+
+customer.innerHTML='<option>Select Customer</option>';
+
+list.forEach(c=>{
+
+const o=document.createElement("option");
+
+o.value=c.name||c.customerName||c.company||"";
+
+o.textContent=o.value;
+
+customer.appendChild(o);
+
+});
+
+}
+
+function loadProjects(){
+
+const list=JSON.parse(localStorage.getItem("projects")||"[]");
+
+if(!project)return;
+
+project.innerHTML='<option>Select Project</option>';
+
+list.forEach(p=>{
+
+const o=document.createElement("option");
+
+o.value=p.projectName||p.name||"";
+
+o.textContent=o.value;
+
+project.appendChild(o);
+
+});
+
+}
+
+function loadInvoices(){
+
+const list=JSON.parse(localStorage.getItem("invoices")||"[]");
+
+if(!invoice)return;
+
+invoice.innerHTML='<option>Select Invoice</option>';
+
+list.forEach(i=>{
+
+const o=document.createElement("option");
+
+o.value=i.invoiceNo||i.number||"";
+
+o.textContent=o.value;
+
+invoice.appendChild(o);
+
+});
+
+}
+
+function loadBanks(){
+
+const banks=JSON.parse(localStorage.getItem("banks")||"[]");
+
+document.querySelectorAll("select").forEach(s=>{
+
+if(s.previousElementSibling&&s.previousElementSibling.textContent==="Bank"){
+
+s.innerHTML="<option>Select Bank</option>";
+
+banks.forEach(b=>{
+
+const o=document.createElement("option");
+
+o.value=b.bankName||b.name||"";
+
+o.textContent=o.value;
+
+s.appendChild(o);
+
+});
+
+}
+
+});
+
+}
+
+function initRevenue(){
+
+loadCustomers();
+
+loadProjects();
+
+loadInvoices();
+
+loadBanks();
+
+renderRevenueTable();
+
+refreshDashboard();
+
+initializeCharts();
+
+}
+
+window.addEventListener("load",initRevenue);
+function getFormValues(){
+
+const text=document.querySelectorAll("textarea");
+
+const nums=document.querySelectorAll("input[type='number']");
+
+const selects=document.querySelectorAll("select");
+
+return{
+
+id:editingIndex==-1?Date.now():revenueData[editingIndex].id,
+
+receipt:editingIndex==-1?receiptNo():revenueData[editingIndex].receipt,
+
+date:revenueDate.value,
+
+customer:customer.value,
+
+project:project.value,
+
+invoice:invoice.value,
+
+description:text[0]?text[0].value:"",
+
+amount:Number(nums[0]?nums[0].value:0),
+
+method:selects[5]?selects[5].value:"",
+
+bank:selects[6]?selects[6].value:"",
+
+reference:document.querySelectorAll("input[type='text']")[0]?.value||"",
+
+status:selects[7]?selects[7].value:"Paid",
+
+notes:text[1]?text[1].value:""
+
+};
+
+}
+
+function saveRevenue(){
+
+const data=getFormValues();
+
+if(!data.date){
+
+alert("Select Date");
+
+return;
+
+}
+
+if(data.customer==="Select Customer"){
+
+alert("Select Customer");
+
+return;
+
+}
+
+if(data.project==="Select Project"){
+
+alert("Select Project");
+
+return;
+
+}
+
+if(data.amount<=0){
+
+alert("Enter Revenue Amount");
+
+return;
+
+}
+
+if(editingIndex==-1){
+
+revenueData.unshift(data);
+
+}else{
+
+revenueData[editingIndex]=data;
+
+}
+
+saveRevenueStorage();
+
+renderRevenueTable();
+
+refreshDashboard();
+
+resetRevenueForm();
+
+showToast("Revenue Saved Successfully");
+
+}
+
+function editRevenue(index){
+
+editingIndex=index;
+
+const r=revenueData[index];
+
+revenueDate.value=r.date;
+
+customer.value=r.customer;
+
+project.value=r.project;
+
+invoice.value=r.invoice;
+
+document.querySelectorAll("textarea")[0].value=r.description;
+
+document.querySelectorAll("input[type='number']")[0].value=r.amount;
+
+document.querySelectorAll("select")[5].value=r.method;
+
+document.querySelectorAll("select")[6].value=r.bank;
+
+document.querySelectorAll("input[type='text']")[0].value=r.reference;
+
+document.querySelectorAll("select")[7].value=r.status;
+
+document.querySelectorAll("textarea")[1].value=r.notes;
+
+window.scrollTo({
+
+top:0,
+
+behavior:"smooth"
+
+});
+
+}
+
+function deleteRevenue(index){
+
+if(!confirm("Delete this revenue record?"))return;
+
+revenueData.splice(index,1);
+
+saveRevenueStorage();
+
+renderRevenueTable();
+
+refreshDashboard();
+
+showToast("Revenue Deleted");
+
+}
+
+function duplicateRevenue(index){
+
+const copy=JSON.parse(JSON.stringify(revenueData[index]));
+
+copy.id=Date.now();
+
+copy.receipt=receiptNo();
+
+revenueData.unshift(copy);
+
+saveRevenueStorage();
+
+renderRevenueTable();
+
+refreshDashboard();
+
+showToast("Revenue Duplicated");
+
+}
+
+function viewRevenue(index){
+
+const r=revenueData[index];
+
+document.getElementById("viewReceipt").textContent=r.receipt;
+
+document.getElementById("viewDate").textContent=r.date;
+
+document.getElementById("viewCustomer").textContent=r.customer;
+
+document.getElementById("viewProject").textContent=r.project;
+
+document.getElementById("viewAmount").textContent=currency(r.amount);
+
+document.getElementById("viewStatus").textContent=r.status;
+
+document.getElementById("viewDescription").textContent=r.description;
+
+document.getElementById("viewRevenueModal").style.display="flex";
+
+}
+
+function showToast(message){
+
+const t=document.getElementById("toast");
+
+if(!t)return;
+
+t.textContent=message;
+
+t.style.display="block";
+
+setTimeout(()=>{
+
+t.style.display="none";
+
+},3000);
+
+}
+
+document.querySelector(".btn-primary")?.addEventListener("click",saveRevenue);
+function refreshDashboard(){
+
+let total=0;
+
+let collected=0;
+
+let outstanding=0;
+
+let paid=0;
+
+let partial=0;
+
+let pending=0;
+
+const customerTotals={};
+
+const projectTotals={};
+
+revenueData.forEach(r=>{
+
+const amount=Number(r.amount)||0;
+
+total+=amount;
+
+if(r.status==="Paid"){
+
+collected+=amount;
+
+paid++;
+
+}else if(r.status==="Partial"){
+
+const paidAmount=amount*0.5;
+
+collected+=paidAmount;
+
+outstanding+=amount-paidAmount;
+
+partial++;
+
+}else{
+
+outstanding+=amount;
+
+pending++;
+
+}
+
+customerTotals[r.customer]=(customerTotals[r.customer]||0)+amount;
+
+projectTotals[r.project]=(projectTotals[r.project]||0)+amount;
+
+});
+
+if(totalRevenue)totalRevenue.textContent=currency(total);
+
+if(collectedRevenue)collectedRevenue.textContent=currency(collected);
+
+if(outstandingRevenue)outstandingRevenue.textContent=currency(outstanding);
+
+if(collectionRate){
+
+collectionRate.textContent=total?((collected/total)*100).toFixed(2)+"%":"0%";
+
+}
+
+if(averageRevenue){
+
+averageRevenue.textContent=currency(
+
+revenueData.length?total/revenueData.length:0
+
+);
+
+}
+
+if(paidInvoices)paidInvoices.textContent=paid;
+
+if(partialInvoices)partialInvoices.textContent=partial;
+
+if(unpaidInvoices)unpaidInvoices.textContent=pending;
+
+let topCustomer="-";
+
+let topCustomerValue=0;
+
+Object.entries(customerTotals).forEach(([name,value])=>{
+
+if(value>topCustomerValue){
+
+topCustomer=name;
+
+topCustomerValue=value;
+
+}
+
+});
+
+if(highestCustomer){
+
+highestCustomer.textContent=topCustomer;
+
+}
+
+let topProject="-";
+
+let topProjectValue=0;
+
+Object.entries(projectTotals).forEach(([name,value])=>{
+
+if(value>topProjectValue){
+
+topProject=name;
+
+topProjectValue=value;
+
+}
+
+});
+
+if(highestProject){
+
+highestProject.textContent=topProject;
+
+}
+
+}
+
+function totalCollected(){
+
+return revenueData.reduce((t,r)=>{
+
+if(r.status==="Paid")return t+Number(r.amount||0);
+
+if(r.status==="Partial")return t+(Number(r.amount||0)*0.5);
+
+return t;
+
+},0);
+
+}
+
+function totalOutstanding(){
+
+return revenueData.reduce((t,r)=>{
+
+if(r.status==="Pending")return t+Number(r.amount||0);
+
+if(r.status==="Partial")return t+(Number(r.amount||0)*0.5);
+
+return t;
+
+},0);
+
+}
+
+function revenueByCustomer(){
+
+const obj={};
+
+revenueData.forEach(r=>{
+
+obj[r.customer]=(obj[r.customer]||0)+Number(r.amount||0);
+
+});
+
+return obj;
+
+}
+
+function revenueByProject(){
+
+const obj={};
+
+revenueData.forEach(r=>{
+
+obj[r.project]=(obj[r.project]||0)+Number(r.amount||0);
+
+});
+
+return obj;
+
+}
+
+function revenueByStatus(){
+
+const obj={
+
+Paid:0,
+
+Partial:0,
+
+Pending:0
+
+};
+
+revenueData.forEach(r=>{
+
+if(obj[r.status]!==undefined){
+
+obj[r.status]++;
+
+}
+
+});
+
+return obj;
+
+}
+let currentPage=1;
+
+const pageSize=10;
+
+let filteredRevenue=[];
+
+function renderRevenueTable(data=revenueData){
+
+filteredRevenue=[...data];
+
+const start=(currentPage-1)*pageSize;
+
+const end=start+pageSize;
+
+const rows=filteredRevenue.slice(start,end);
+
+revenueTable.innerHTML="";
+
+if(rows.length===0){
+
+revenueTable.innerHTML=`<tr><td colspan="12" style="text-align:center;">No Revenue Records Found</td></tr>`;
+
+return;
+
+}
+
+rows.forEach((r,index)=>{
+
+const outstanding=r.status==="Paid"?0:r.status==="Partial"?Number(r.amount)*0.5:Number(r.amount);
+
+const collected=Number(r.amount)-outstanding;
+
+revenueTable.innerHTML+=`
+
+<tr>
+
+<td>${start+index+1}</td>
+
+<td>${r.date}</td>
+
+<td>${r.receipt}</td>
+
+<td>${r.customer}</td>
+
+<td>${r.project}</td>
+
+<td>${r.description}</td>
+
+<td>${currency(r.amount)}</td>
+
+<td>${currency(collected)}</td>
+
+<td>${currency(outstanding)}</td>
+
+<td><span class="${
+r.status==="Paid"?"status-paid":
+r.status==="Partial"?"status-partial":
+"status-pending"
+}">${r.status}</span></td>
+
+<td>${r.method}</td>
+
+<td style="white-space:nowrap;">
+
+<button class="btn-primary" onclick="viewRevenue(${start+index})">View</button>
+
+<button class="btn-secondary" onclick="editRevenue(${start+index})">Edit</button>
+
+<button class="btn-secondary" onclick="duplicateRevenue(${start+index})">Copy</button>
+
+<button class="btn-secondary" onclick="deleteRevenue(${start+index})">Delete</button>
+
+</td>
+
+</tr>
+
+`;
+
+});
+
+updatePagination();
+
+}
+
+function searchRevenue(keyword){
+
+keyword=keyword.toLowerCase();
+
+renderRevenueTable(
+
+revenueData.filter(r=>
+
+(r.receipt||"").toLowerCase().includes(keyword)||
+
+(r.customer||"").toLowerCase().includes(keyword)||
+
+(r.project||"").toLowerCase().includes(keyword)||
+
+(r.description||"").toLowerCase().includes(keyword)||
+
+(r.method||"").toLowerCase().includes(keyword)||
+
+(r.status||"").toLowerCase().includes(keyword)
+
+)
+
+);
+
+}
+
+function applyFilters(){
+
+const customerValue=document.getElementById("customerFilter").value;
+
+const projectValue=document.getElementById("projectFilter").value;
+
+const statusValue=document.getElementById("statusFilter").value;
+
+const bankValue=document.getElementById("bankFilter").value;
+
+const from=document.getElementById("fromDate").value;
+
+const to=document.getElementById("toDate").value;
+
+let results=revenueData.filter(r=>{
+
+if(customerValue!=="All Customers"&&r.customer!==customerValue)return false;
+
+if(projectValue!=="All Projects"&&r.project!==projectValue)return false;
+
+if(statusValue!=="All Status"&&r.status!==statusValue)return false;
+
+if(bankValue!=="All Banks"&&r.bank!==bankValue)return false;
+
+if(from&&r.date<from)return false;
+
+if(to&&r.date>to)return false;
+
+return true;
+
+});
+
+currentPage=1;
+
+renderRevenueTable(results);
+
+}
+
+function updatePagination(){
+
+const totalPages=Math.max(1,Math.ceil(filteredRevenue.length/pageSize));
+
+const pages=document.getElementById("pageInfo");
+
+if(pages){
+
+pages.textContent=`Page ${currentPage} of ${totalPages}`;
+
+}
+
+}
+
+function nextPage(){
+
+const totalPages=Math.ceil(filteredRevenue.length/pageSize);
+
+if(currentPage<totalPages){
+
+currentPage++;
+
+renderRevenueTable(filteredRevenue);
+
+}
+
+}
+
+function previousPage(){
+
+if(currentPage>1){
+
+currentPage--;
+
+renderRevenueTable(filteredRevenue);
+
+}
+
+}
+
+function firstPage(){
+
+currentPage=1;
+
+renderRevenueTable(filteredRevenue);
+
+}
+
+function lastPage(){
+
+currentPage=Math.max(1,Math.ceil(filteredRevenue.length/pageSize));
+
+renderRevenueTable(filteredRevenue);
+
+}
+
+const searchBox=document.querySelector(".search-box input");
+
+if(searchBox){
+
+searchBox.addEventListener("input",e=>{
+
+searchRevenue(e.target.value);
+
+});
+
+}
+function exportRevenueCSV(){
+
+let csv="Receipt,Date,Customer,Project,Description,Amount,Status,Method,Bank\n";
+
+revenueData.forEach(r=>{
+
+csv+=`"${r.receipt}","${r.date}","${r.customer}","${r.project}","${r.description}",${r.amount},"${r.status}","${r.method}","${r.bank}"\n`;
+
+});
+
+const blob=new Blob([csv],{type:"text/csv"});
+
+const a=document.createElement("a");
+
+a.href=URL.createObjectURL(blob);
+
+a.download="ProjectRevenue.csv";
+
+a.click();
+
+URL.revokeObjectURL(a.href);
+
+}
+
+function exportRevenueJSON(){
+
+const blob=new Blob(
+
+[JSON.stringify(revenueData,null,2)],
+
+{type:"application/json"}
+
+);
+
+const a=document.createElement("a");
+
+a.href=URL.createObjectURL(blob);
+
+a.download="ProjectRevenue.json";
+
+a.click();
+
+URL.revokeObjectURL(a.href);
+
+}
+
+function printRevenue(){
+
+window.print();
+
+}
+
+function clearRevenue(){
+
+if(!confirm("Clear all revenue records?"))return;
+
+revenueData=[];
+
+saveRevenueStorage();
+
+renderRevenueTable();
+
+refreshDashboard();
+
+showToast("Revenue Cleared");
+
+}
+
+function refreshRevenue(){
+
+revenueData=JSON.parse(localStorage.getItem(revenueKey)||"[]");
+
+renderRevenueTable();
+
+refreshDashboard();
+
+initializeCharts();
+
+showToast("Dashboard Refreshed");
+
+}
+
+function loading(show){
+
+const loader=document.getElementById("loadingScreen");
+
+if(!loader)return;
+
+loader.style.display=show?"flex":"none";
+
+}
+
+function closeRevenueModal(){
+
+const modal=document.getElementById("viewRevenueModal");
+
+if(modal){
+
+modal.style.display="none";
+
+}
+
+}
+
+window.onclick=function(e){
+
+const modal=document.getElementById("viewRevenueModal");
+
+if(modal&&e.target===modal){
+
+modal.style.display="none";
+
+}
+
+};
+
+document.addEventListener("keydown",e=>{
+
+if(e.key==="Escape"){
+
+closeRevenueModal();
+
+}
+
+});
+
+window.addEventListener("load",()=>{
+
+loading(true);
+
+setTimeout(()=>{
+
+loading(false);
+
+refreshRevenue();
+
+},500);
+
+});
+
+document.querySelectorAll(".btn-primary").forEach(btn=>{
+
+switch(btn.textContent.trim()){
+
+case"Export CSV":
+
+btn.onclick=exportRevenueCSV;
+
+break;
+
+case"Export Excel":
+
+btn.onclick=exportRevenueJSON;
+
+break;
+
+case"Print Report":
+
+btn.onclick=printRevenue;
+
+break;
+
+case"Refresh Dashboard":
+
+btn.onclick=refreshRevenue;
+
+break;
+
+}
+
+});
+
+refreshRevenue();
+let monthlyRevenueChart;
+let statusChart;
+let customerChart;
+let projectChart;
+let quarterlyRevenueChart;
+let annualRevenueChart;
+let bankRevenueChart;
+let paymentMethodChart;
+let forecastChart;
+
+function destroyCharts(){
+
+[
+monthlyRevenueChart,
+statusChart,
+customerChart,
+projectChart,
+quarterlyRevenueChart,
+annualRevenueChart,
+bankRevenueChart,
+paymentMethodChart,
+forecastChart
+
+].forEach(c=>{
+
+if(c)c.destroy();
+
+});
+
+}
+
+function initializeCharts(){
+
+if(typeof Chart==="undefined")return;
+
+destroyCharts();
+
+renderMonthlyRevenueChart();
+
+renderStatusChart();
+
+renderCustomerChart();
+
+renderProjectChart();
+
+renderQuarterlyRevenueChart();
+
+renderAnnualRevenueChart();
+
+renderBankRevenueChart();
+
+renderPaymentMethodChart();
+
+renderForecastChart();
+
+}
+
+function renderMonthlyRevenueChart(){
+
+const months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+const totals=new Array(12).fill(0);
+
+revenueData.forEach(r=>{
+
+if(!r.date)return;
+
+const m=new Date(r.date).getMonth();
+
+totals[m]+=Number(r.amount)||0;
+
+});
+
+const ctx=document.getElementById("monthlyRevenueChart");
+
+if(!ctx)return;
+
+monthlyRevenueChart=new Chart(ctx,{
+
+type:"bar",
+
+data:{
+
+labels:months,
+
+datasets:[{
+
+label:"Revenue",
+
+data:totals
+
+}]
+
+},
+
+options:{
+
+responsive:true,
+
+maintainAspectRatio:false
+
+}
+
+});
+
+}
+
+function renderStatusChart(){
+
+const s=revenueByStatus();
+
+const ctx=document.getElementById("statusChart");
+
+if(!ctx)return;
+
+statusChart=new Chart(ctx,{
+
+type:"doughnut",
+
+data:{
+
+labels:Object.keys(s),
+
+datasets:[{
+
+data:Object.values(s)
+
+}]
+
+},
+
+options:{
+
+responsive:true,
+
+maintainAspectRatio:false
+
+}
+
+});
+
+}
+
+function renderCustomerChart(){
+
+const d=revenueByCustomer();
+
+const ctx=document.getElementById("customerChart");
+
+if(!ctx)return;
+
+customerChart=new Chart(ctx,{
+
+type:"bar",
+
+data:{
+
+labels:Object.keys(d),
+
+datasets:[{
+
+label:"Revenue",
+
+data:Object.values(d)
+
+}]
+
+},
+
+options:{
+
+responsive:true,
+
+maintainAspectRatio:false,
+
+indexAxis:"y"
+
+}
+
+});
+
+}
+
+function renderProjectChart(){
+
+const d=revenueByProject();
+
+const ctx=document.getElementById("projectChart");
+
+if(!ctx)return;
+
+projectChart=new Chart(ctx,{
+
+type:"pie",
+
+data:{
+
+labels:Object.keys(d),
+
+datasets:[{
+
+data:Object.values(d)
+
+}]
+
+},
+
+options:{
+
+responsive:true,
+
+maintainAspectRatio:false
+
+}
+
+});
+
+}
+
+function renderQuarterlyRevenueChart(){
+
+const q=[0,0,0,0];
+
+revenueData.forEach(r=>{
+
+if(!r.date)return;
+
+const m=new Date(r.date).getMonth();
+
+q[Math.floor(m/3)]+=Number(r.amount)||0;
+
+});
+
+const ctx=document.getElementById("quarterlyRevenueChart");
+
+if(!ctx)return;
+
+quarterlyRevenueChart=new Chart(ctx,{
+
+type:"line",
+
+data:{
+
+labels:["Q1","Q2","Q3","Q4"],
+
+datasets:[{
+
+label:"Quarterly Revenue",
+
+data:q
+
+}]
+
+},
+
+options:{
+
+responsive:true,
+
+maintainAspectRatio:false
+
+}
+
+});
+
+}
+
+function renderAnnualRevenueChart(){
+
+const years={};
+
+revenueData.forEach(r=>{
+
+if(!r.date)return;
+
+const y=new Date(r.date).getFullYear();
+
+years[y]=(years[y]||0)+(Number(r.amount)||0);
+
+});
+
+const ctx=document.getElementById("annualRevenueChart");
+
+if(!ctx)return;
+
+annualRevenueChart=new Chart(ctx,{
+
+type:"bar",
+
+data:{
+
+labels:Object.keys(years),
+
+datasets:[{
+
+label:"Annual Revenue",
+
+data:Object.values(years)
+
+}]
+
+},
+
+options:{
+
+responsive:true,
+
+maintainAspectRatio:false
+
+}
+
+});
+
+}
+
+function renderBankRevenueChart(){
+
+const banks={};
+
+revenueData.forEach(r=>{
+
+banks[r.bank]=(banks[r.bank]||0)+(Number(r.amount)||0);
+
+});
+
+const ctx=document.getElementById("bankRevenueChart");
+
+if(!ctx)return;
+
+bankRevenueChart=new Chart(ctx,{
+
+type:"bar",
+
+data:{
+
+labels:Object.keys(banks),
+
+datasets:[{
+
+label:"Bank Revenue",
+
+data:Object.values(banks)
+
+}]
+
+},
+
+options:{
+
+responsive:true,
+
+maintainAspectRatio:false
+
+}
+
+});
+
+}
+
+function renderPaymentMethodChart(){
+
+const methods={};
+
+revenueData.forEach(r=>{
+
+methods[r.method]=(methods[r.method]||0)+(Number(r.amount)||0);
+
+});
+
+const ctx=document.getElementById("paymentMethodChart");
+
+if(!ctx)return;
+
+paymentMethodChart=new Chart(ctx,{
+
+type:"pie",
+
+data:{
+
+labels:Object.keys(methods),
+
+datasets:[{
+
+data:Object.values(methods)
+
+}]
+
+},
+
+options:{
+
+responsive:true,
+
+maintainAspectRatio:false
+
+}
+
+});
+
+}
+
+function renderForecastChart(){
+
+const monthly=new Array(12).fill(0);
+
+revenueData.forEach(r=>{
+
+if(!r.date)return;
+
+const m=new Date(r.date).getMonth();
+
+monthly[m]+=Number(r.amount)||0;
+
+});
+
+const forecast=[];
+
+let total=0;
+
+for(let i=0;i<12;i++){
+
+total+=monthly[i];
+
+forecast.push(total/(i+1));
+
+}
+
+const ctx=document.getElementById("forecastChart");
+
+if(!ctx)return;
+
+forecastChart=new Chart(ctx,{
+
+type:"line",
+
+data:{
+
+labels:["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"],
+
+datasets:[
+
+{
+
+label:"Actual",
+
+data:monthly
+
+},
+
+{
+
+label:"Forecast",
+
+data:forecast
+
+}
+
+]
+
+},
+
+options:{
+
+responsive:true,
+
+maintainAspectRatio:false
+
+}
+
+});
+
+}
+</script>
+
+</body>
+
+</html>
