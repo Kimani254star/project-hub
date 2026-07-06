@@ -34,8 +34,8 @@ left:0;
 top:0;
 width:250px;
 height:100vh;
-background:#062b69;
-color:white;
+background:#ffffff;border-right:1px solid #e5e7eb;
+color:#111827;
 overflow:auto;
 z-index:100;
 }
@@ -45,7 +45,7 @@ padding:20px;
 display:flex;
 align-items:center;
 gap:12px;
-border-bottom:1px solid rgba(255,255,255,.15);
+border-bottom:1px solid #e5e7eb;
 }
 
 .logo img{
@@ -56,11 +56,11 @@ height:42px;
 .logo h1{
 font-size:22px;
 font-weight:700;
-}
+color:#062b69;}
 
 .logo p{
 font-size:12px;
-opacity:.7;
+opacity:.7;color:#6b7280;
 }
 
 .sidebar ul{
@@ -77,7 +77,7 @@ display:flex;
 align-items:center;
 gap:12px;
 padding:11px 14px;
-color:white;
+color:#111827;
 text-decoration:none;
 border-radius:8px;
 transition:.3s;
@@ -435,6 +435,193 @@ font-size:14px;
 </head>
 
 <body>
+<!-- AUTH OVERLAY (shared session with Acacia Mail / ERP) -->
+<script>
+  window.__SUPA_URL__ = 'https://swgyefbzplelxrjcovef.supabase.co';
+  window.__SUPA_KEY__ = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN3Z3llZmJ6cGxlbHhyamNvdmVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1MDU4MzIsImV4cCI6MjA5NzA4MTgzMn0.U2zDNqRfdEgTgldBd7CcEhfsmGXvYZ14yh-4yYC2HlY';
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+
+<div id="__authOverlay" style="position:fixed;inset:0;z-index:99999;background:linear-gradient(135deg,#4338ca,#0f172a);display:flex;align-items:center;justify-content:center;padding:16px;font-family:Inter,system-ui,sans-serif;">
+  <div style="width:100%;max-width:420px;background:#fff;border-radius:16px;box-shadow:0 25px 60px rgba(0,0,0,.3);overflow:hidden;">
+    <div style="padding:24px;text-align:center;border-bottom:1px solid #f1f5f9;">
+      <div style="width:56px;height:56px;margin:0 auto;border-radius:14px;background:#4338ca;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:26px;">A</div>
+      <h1 style="margin-top:12px;font-size:20px;font-weight:700;color:#0f172a;">Welcome to Acacia Projects</h1>
+      <p style="font-size:13px;color:#64748b;margin-top:4px;">Sign in or create your workspace account.</p>
+    </div>
+    <div style="display:flex;border-bottom:1px solid #f1f5f9;">
+      <button type="button" id="__tabSignIn" style="flex:1;padding:12px;font-size:13px;font-weight:600;color:#4338ca;border:none;background:#fff;border-bottom:2px solid #4338ca;cursor:pointer;">Sign In</button>
+      <button type="button" id="__tabSignUp" style="flex:1;padding:12px;font-size:13px;font-weight:600;color:#64748b;border:none;background:#fff;border-bottom:2px solid transparent;cursor:pointer;">Create Account</button>
+    </div>
+    <form id="__signinForm" style="padding:24px;display:flex;flex-direction:column;gap:12px;">
+      <div><label style="font-size:11px;font-weight:600;color:#475569;">Company name</label>
+        <input id="__siCompany" required style="width:100%;margin-top:4px;height:40px;padding:0 12px;border-radius:8px;border:1px solid #cbd5e1;font-size:14px;outline:none;box-sizing:border-box;" placeholder="Exactly as used on Acacia ERP"/></div>
+      <div><label style="font-size:11px;font-weight:600;color:#475569;">Email</label>
+        <input id="__siEmail" type="email" autocomplete="username" required style="width:100%;margin-top:4px;height:40px;padding:0 12px;border-radius:8px;border:1px solid #cbd5e1;font-size:14px;outline:none;box-sizing:border-box;" placeholder="you@example.com"/></div>
+      <div><label style="font-size:11px;font-weight:600;color:#475569;">Password</label>
+        <input id="__siPass" type="password" autocomplete="current-password" required style="width:100%;margin-top:4px;height:40px;padding:0 12px;border-radius:8px;border:1px solid #cbd5e1;font-size:14px;outline:none;box-sizing:border-box;"/></div>
+      <button type="submit" style="width:100%;height:40px;border-radius:8px;background:#4338ca;color:#fff;font-weight:600;border:none;cursor:pointer;">Sign In</button>
+      <p id="__siError" style="font-size:12px;color:#ef4444;display:none;margin:0;"></p>
+      <p style="font-size:11px;color:#64748b;text-align:center;margin:0;">Use the same <b>Company name</b> and <b>Email</b> you use on Acacia Mail / ERP.</p>
+    </form>
+    <form id="__signupForm" style="display:none;padding:24px;flex-direction:column;gap:12px;">
+      <div><label style="font-size:11px;font-weight:600;color:#475569;">Company name</label>
+        <input id="__suCompany" required style="width:100%;margin-top:4px;height:40px;padding:0 12px;border-radius:8px;border:1px solid #cbd5e1;font-size:14px;outline:none;box-sizing:border-box;"/></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div><label style="font-size:11px;font-weight:600;color:#475569;">First name</label>
+          <input id="__suFirst" required style="width:100%;margin-top:4px;height:40px;padding:0 12px;border-radius:8px;border:1px solid #cbd5e1;font-size:14px;outline:none;box-sizing:border-box;"/></div>
+        <div><label style="font-size:11px;font-weight:600;color:#475569;">Last name</label>
+          <input id="__suLast" required style="width:100%;margin-top:4px;height:40px;padding:0 12px;border-radius:8px;border:1px solid #cbd5e1;font-size:14px;outline:none;box-sizing:border-box;"/></div>
+      </div>
+      <div><label style="font-size:11px;font-weight:600;color:#475569;">Email</label>
+        <input id="__suEmail" type="email" required style="width:100%;margin-top:4px;height:40px;padding:0 12px;border-radius:8px;border:1px solid #cbd5e1;font-size:14px;outline:none;box-sizing:border-box;"/></div>
+      <div><label style="font-size:11px;font-weight:600;color:#475569;">Password</label>
+        <input id="__suPass" type="password" required minlength="6" style="width:100%;margin-top:4px;height:40px;padding:0 12px;border-radius:8px;border:1px solid #cbd5e1;font-size:14px;outline:none;box-sizing:border-box;"/></div>
+      <label style="display:flex;gap:6px;font-size:12px;color:#64748b;"><input type="checkbox" required/> I agree to the Acacia Terms & Privacy Policy.</label>
+      <button type="submit" style="width:100%;height:40px;border-radius:8px;background:#4338ca;color:#fff;font-weight:600;border:none;cursor:pointer;">Create Account</button>
+      <p id="__suError" style="font-size:12px;color:#ef4444;display:none;margin:0;"></p>
+    </form>
+  </div>
+</div>
+
+<div id="__appSwitcher" class="hidden fixed top-3 right-3 z-[9998]">
+  <div class="flex items-center gap-2 bg-white border border-slate-200 rounded-xl shadow-lg px-1 py-1">
+
+    <button onclick="openMail()" class="text-xs px-1 py-1 rounded-lg border border-slate-200 hover:bg-slate-50">
+      ✉️ Compose
+    </button>
+
+    <button onclick="pullAll()" class="text-xs px-1 py-1 rounded-lg border border-slate-200 hover:bg-slate-50">
+      ↻ Sync
+    </button>
+
+    <a href="./app_1701-1_3.html" class="text-xs px-1 py-1 rounded-lg border border-slate-200 hover:bg-slate-50">
+      ← Back to Acacia
+    </a>
+
+    <div class="relative">
+      <button onclick="toggleApps()" class="p-2 rounded-lg hover:bg-slate-100">
+        <svg class="w-5 h-5 text-slate-600" viewBox="0 0 24 24" fill="currentColor">
+          <circle cx="5" cy="5" r="1.5"/>
+          <circle cx="12" cy="5" r="1.5"/>
+          <circle cx="19" cy="5" r="1.5"/>
+          <circle cx="5" cy="12" r="1.5"/>
+          <circle cx="12" cy="12" r="1.5"/>
+          <circle cx="19" cy="12" r="1.5"/>
+          <circle cx="5" cy="19" r="1.5"/>
+          <circle cx="12" cy="19" r="1.5"/>
+          <circle cx="19" cy="19" r="1.5"/>
+        </svg>
+      </button>
+
+      <div id="appsMenu" class="hidden absolute right-0 mt-2 w-56 bg-white border border-slate-200 rounded-lg shadow-lg z-50 text-sm">
+        <a href="./app_1701-1_3.html" class="block px-1 py-1 hover:bg-slate-50">🏠 Acacia ERP (Main)</a>
+        <a href="./acacia-mail_4.html" class="block px-1 py-1 hover:bg-slate-50">✉️ Acacia Mail</a>
+        <a href="./acacia-inventory.html" class="block px-1 py-1 hover:bg-slate-50">📦 Inventory</a>
+        <a href="./acacia-payroll.html" class="block px-1 py-1 hover:bg-slate-50">💵 Payroll</a>
+        <a href="./acacia-expense.html" class="block px-1 py-1 hover:bg-slate-50 font-semibold text-acacia-700">💰 Expense</a>
+      </div>
+    </div>
+
+    <div id="userAvatar" class="w-9 h-9 rounded-full bg-acacia-700 text-white flex items-center justify-center text-xs font-bold">
+    </div>
+
+    <button onclick="__signOut()" class="text-xs px-1 py-1 rounded-lg border border-slate-200 hover:bg-slate-50">
+      Sign out
+    </button>
+
+  </div>
+</div>
+
+<script>
+(function(){
+  var USERS_KEY='users', SESSION_KEY='acacia_session';
+  var CURRENT_APP='projects', ACCENT='#4338ca';
+  var LEGACY_KEYS=['crm_users','crm_session','project_users','project_session',
+                   'customers','crmLeads','crmTasks','crmMeetings','crmCalls',
+                   'projects','invoices','banks'];
+  var sb = window.supabase.createClient(window.__SUPA_URL__, window.__SUPA_KEY__);
+
+  function compId(n){ return 'comp_'+String(n||'').toLowerCase().replace(/[^a-z0-9]/g,'_'); }
+  function loadU(){ try{return JSON.parse(localStorage.getItem(USERS_KEY)||'[]')}catch{return[]} }
+  function saveU(u){ localStorage.setItem(USERS_KEY, JSON.stringify(u)); }
+  function cur(){ try{return JSON.parse(localStorage.getItem(SESSION_KEY)||'null')}catch{return null} }
+  window.__signOut = function(){ localStorage.removeItem(SESSION_KEY); location.reload(); };
+
+  async function fetchCloud(){
+    try{
+      var r = await sb.from('app_state').select('value').eq('key','users').maybeSingle();
+      if(Array.isArray(r.data && r.data.value)){ saveU(r.data.value); return r.data.value; }
+    }catch(e){ console.warn('users fetch failed',e); }
+    return loadU();
+  }
+  async function saveCloud(users){
+    saveU(users);
+    try{ await sb.from('app_state').upsert({ key:'users', value:users, updated_at:new Date().toISOString() }, { onConflict:'key' }); }
+    catch(e){ console.warn('users save failed',e); }
+  }
+  function clearDemo(){
+    if(localStorage.getItem('acacia_demo_cleared')==='1') return;
+    LEGACY_KEYS.forEach(function(k){ try{localStorage.removeItem(k);}catch{} });
+    localStorage.setItem('acacia_demo_cleared','1');
+  }
+  function showTab(t){
+    var si=t==='signin';
+    var a=document.getElementById('__tabSignIn'), b=document.getElementById('__tabSignUp');
+    a.style.color=si?ACCENT:'#64748b'; a.style.borderBottomColor=si?ACCENT:'transparent';
+    b.style.color=si?'#64748b':ACCENT; b.style.borderBottomColor=si?'transparent':ACCENT;
+    document.getElementById('__signinForm').style.display=si?'flex':'none';
+    document.getElementById('__signupForm').style.display=si?'none':'flex';
+  }
+  function reveal(){
+    document.getElementById('__authOverlay').style.display='none';
+    var sw=document.getElementById('__appSwitcher'); sw.style.display='flex';
+    sw.querySelectorAll('a[data-app]').forEach(function(a){
+      a.style.background = a.dataset.app===CURRENT_APP ? ACCENT : 'rgba(15,23,42,.85)';
+    });
+  }
+  document.addEventListener('DOMContentLoaded', function(){
+    if(cur()){ reveal(); return; }
+    document.getElementById('__tabSignIn').onclick=function(){showTab('signin')};
+    document.getElementById('__tabSignUp').onclick=function(){showTab('signup')};
+    document.getElementById('__signinForm').addEventListener('submit', async function(e){
+      e.preventDefault();
+      var err=document.getElementById('__siError'); err.style.display='none';
+      var company=document.getElementById('__siCompany').value.trim();
+      var email=document.getElementById('__siEmail').value.trim().toLowerCase();
+      var pass=document.getElementById('__siPass').value;
+      if(!company||!email){ err.textContent='Company name and email are required.'; err.style.display='block'; return; }
+      var users=await fetchCloud(); var cid=compId(company);
+      var m=users.find(function(u){ return (u.email||'').toLowerCase()===email && (u.companyId||compId(u.companyName||''))===cid; });
+      if(!m){ err.textContent='No matching Acacia account for that company + email.'; err.style.display='block'; return; }
+      if(m.password && m.password!==pass){ err.textContent='Incorrect password.'; err.style.display='block'; return; }
+      localStorage.setItem(SESSION_KEY, JSON.stringify({email:m.email,name:m.fullName||m.username||email,companyId:cid,companyName:m.companyName||company}));
+      clearDemo(); reveal();
+    });
+    document.getElementById('__signupForm').addEventListener('submit', async function(e){
+      e.preventDefault();
+      var err=document.getElementById('__suError'); err.style.display='none';
+      var company=document.getElementById('__suCompany').value.trim();
+      var first=document.getElementById('__suFirst').value.trim();
+      var last=document.getElementById('__suLast').value.trim();
+      var email=document.getElementById('__suEmail').value.trim().toLowerCase();
+      var pass=document.getElementById('__suPass').value;
+      if(!company||!email){ err.textContent='Company name and email are required.'; err.style.display='block'; return; }
+      var users=await fetchCloud(); var cid=compId(company);
+      if(users.some(function(u){return (u.email||'').toLowerCase()===email;})){
+        err.textContent='Email already registered — use Sign In instead.'; err.style.display='block'; return;
+      }
+      var rec={ username:email.split('@')[0], email:email, password:pass,
+        fullName:((first+' '+last).trim())||email, role:'admin',
+        companyId:cid, companyName:company, registered:new Date().toISOString(), status:'active', modules:[] };
+      users.push(rec); await saveCloud(users);
+      localStorage.setItem(SESSION_KEY, JSON.stringify({email:rec.email,name:rec.fullName,companyId:cid,companyName:company}));
+      clearDemo(); reveal();
+    });
+  });
+})();
+</script>
+
 
 <div class="sidebar">
 
@@ -507,24 +694,6 @@ font-size:14px;
 <p>Manage Project Revenue, Collections and Revenue Analytics</p>
 
 </div>
-
-</div>
-
-<div class="header-right">
-
-<div class="search-box">
-
-<input type="text" placeholder="Search Revenue">
-
-</div>
-
-<button class="action-btn">
-
-Revenue Actions
-
-▼
-
-</button>
 
 </div>
 
@@ -804,103 +973,7 @@ Print
 
 </thead>
 
-<tbody id="revenueTable">
-<tr>
-<td>1</td>
-<td>2026-06-30</td>
-<td>REV00001</td>
-<td>ABC Builders Ltd</td>
-<td>Westlands Heights</td>
-<td>Contract Payment</td>
-<td>KES 850,000</td>
-<td>KES 850,000</td>
-<td>KES 0</td>
-<td><span class="status-paid">Paid</span></td>
-<td>Bank Transfer</td>
-<td>
-<button class="btn-primary">View</button>
-<button class="btn-secondary">Edit</button>
-<button class="btn-secondary">Delete</button>
-</td>
-</tr>
-
-<tr>
-<td>2</td>
-<td>2026-06-28</td>
-<td>REV00002</td>
-<td>Prime Holdings</td>
-<td>Office Complex</td>
-<td>Progress Payment</td>
-<td>KES 425,000</td>
-<td>KES 300,000</td>
-<td>KES 125,000</td>
-<td><span class="status-partial">Partial</span></td>
-<td>MPESA</td>
-<td>
-<button class="btn-primary">View</button>
-<button class="btn-secondary">Edit</button>
-<button class="btn-secondary">Delete</button>
-</td>
-</tr>
-
-<tr>
-<td>3</td>
-<td>2026-06-27</td>
-<td>REV00003</td>
-<td>Green City Ltd</td>
-<td>Residential Estate</td>
-<td>Deposit</td>
-<td>KES 1,200,000</td>
-<td>KES 0</td>
-<td>KES 1,200,000</td>
-<td><span class="status-pending">Pending</span></td>
-<td>Cheque</td>
-<td>
-<button class="btn-primary">View</button>
-<button class="btn-secondary">Edit</button>
-<button class="btn-secondary">Delete</button>
-</td>
-</tr>
-
-<tr>
-<td>4</td>
-<td>2026-06-25</td>
-<td>REV00004</td>
-<td>Blue Stone Ltd</td>
-<td>Shopping Mall</td>
-<td>Final Payment</td>
-<td>KES 2,650,000</td>
-<td>KES 2,650,000</td>
-<td>KES 0</td>
-<td><span class="status-paid">Paid</span></td>
-<td>EFT</td>
-<td>
-<button class="btn-primary">View</button>
-<button class="btn-secondary">Edit</button>
-<button class="btn-secondary">Delete</button>
-</td>
-</tr>
-
-<tr>
-<td>5</td>
-<td>2026-06-22</td>
-<td>REV00005</td>
-<td>Acacia Construction</td>
-<td>Apartment Block</td>
-<td>Advance Payment</td>
-<td>KES 690,000</td>
-<td>KES 500,000</td>
-<td>KES 190,000</td>
-<td><span class="status-partial">Partial</span></td>
-<td>Cash</td>
-<td>
-<button class="btn-primary">View</button>
-<button class="btn-secondary">Edit</button>
-<button class="btn-secondary">Delete</button>
-</td>
-</tr>
-
-</tbody>
+<tbody id="revenueTable"><tr><td colspan='20' style='text-align:center;padding:24px;color:#9ca3af;'>No records yet</td></tr></tbody>
 
 <tfoot>
 
@@ -1050,69 +1123,7 @@ Records
 
 </thead>
 
-<tbody>
-
-<tr>
-
-<td>ABC Builders Ltd</td>
-
-<td>KES 3,250,000</td>
-
-<td>14</td>
-
-<td>100%</td>
-
-</tr>
-
-<tr>
-
-<td>Prime Holdings</td>
-
-<td>KES 2,900,000</td>
-
-<td>11</td>
-
-<td>89%</td>
-
-</tr>
-
-<tr>
-
-<td>Blue Stone Ltd</td>
-
-<td>KES 2,600,000</td>
-
-<td>9</td>
-
-<td>100%</td>
-
-</tr>
-
-<tr>
-
-<td>Green City Ltd</td>
-
-<td>KES 1,850,000</td>
-
-<td>8</td>
-
-<td>76%</td>
-
-</tr>
-
-<tr>
-
-<td>Acacia Construction</td>
-
-<td>KES 1,200,000</td>
-
-<td>6</td>
-
-<td>84%</td>
-
-</tr>
-
-</tbody>
+<tbody><tr><td colspan='20' style='text-align:center;padding:24px;color:#9ca3af;'>No records yet</td></tr></tbody>
 
 </table>
 
@@ -1138,59 +1149,7 @@ Records
 
 </thead>
 
-<tbody>
-
-<tr>
-
-<td>Westlands Heights</td>
-
-<td>KES 4,100,000</td>
-
-<td>Completed</td>
-
-</tr>
-
-<tr>
-
-<td>Shopping Mall</td>
-
-<td>KES 3,500,000</td>
-
-<td>Completed</td>
-
-</tr>
-
-<tr>
-
-<td>Office Complex</td>
-
-<td>KES 2,450,000</td>
-
-<td>Active</td>
-
-</tr>
-
-<tr>
-
-<td>Residential Estate</td>
-
-<td>KES 2,000,000</td>
-
-<td>Active</td>
-
-</tr>
-
-<tr>
-
-<td>Apartment Block</td>
-
-<td>KES 1,600,000</td>
-
-<td>Ongoing</td>
-
-</tr>
-
-</tbody>
+<tbody><tr><td colspan='20' style='text-align:center;padding:24px;color:#9ca3af;'>No records yet</td></tr></tbody>
 
 </table>
 
@@ -1222,105 +1181,7 @@ Records
 
 </thead>
 
-<tbody>
-
-<tr>
-
-<td>January</td>
-
-<td>12</td>
-
-<td>KES 850,000</td>
-
-<td>KES 800,000</td>
-
-<td>KES 50,000</td>
-
-<td>5%</td>
-
-</tr>
-
-<tr>
-
-<td>February</td>
-
-<td>15</td>
-
-<td>KES 1,120,000</td>
-
-<td>KES 1,040,000</td>
-
-<td>KES 80,000</td>
-
-<td>12%</td>
-
-</tr>
-
-<tr>
-
-<td>March</td>
-
-<td>18</td>
-
-<td>KES 1,560,000</td>
-
-<td>KES 1,480,000</td>
-
-<td>KES 80,000</td>
-
-<td>18%</td>
-
-</tr>
-
-<tr>
-
-<td>April</td>
-
-<td>20</td>
-
-<td>KES 1,820,000</td>
-
-<td>KES 1,700,000</td>
-
-<td>KES 120,000</td>
-
-<td>15%</td>
-
-</tr>
-
-<tr>
-
-<td>May</td>
-
-<td>24</td>
-
-<td>KES 2,300,000</td>
-
-<td>KES 2,050,000</td>
-
-<td>KES 250,000</td>
-
-<td>26%</td>
-
-</tr>
-
-<tr>
-
-<td>June</td>
-
-<td>27</td>
-
-<td>KES 3,200,000</td>
-
-<td>KES 2,850,000</td>
-
-<td>KES 350,000</td>
-
-<td>39%</td>
-
-</tr>
-
-</tbody>
+<tbody><tr><td colspan='20' style='text-align:center;padding:24px;color:#9ca3af;'>No records yet</td></tr></tbody>
 
 </table>
 
@@ -1347,51 +1208,7 @@ Records
 
 </thead>
 
-<tbody>
-
-<tr>
-<td>Equity Bank</td>
-<td>28</td>
-<td>KES 3,850,000</td>
-<td>30%</td>
-</tr>
-
-<tr>
-<td>KCB Bank</td>
-<td>22</td>
-<td>KES 2,950,000</td>
-<td>23%</td>
-</tr>
-
-<tr>
-<td>Co-operative Bank</td>
-<td>17</td>
-<td>KES 2,180,000</td>
-<td>17%</td>
-</tr>
-
-<tr>
-<td>NCBA Bank</td>
-<td>13</td>
-<td>KES 1,760,000</td>
-<td>14%</td>
-</tr>
-
-<tr>
-<td>Stanbic Bank</td>
-<td>11</td>
-<td>KES 1,220,000</td>
-<td>10%</td>
-</tr>
-
-<tr>
-<td>ABSA Bank</td>
-<td>9</td>
-<td>KES 890,000</td>
-<td>6%</td>
-</tr>
-
-</tbody>
+<tbody><tr><td colspan='20' style='text-align:center;padding:24px;color:#9ca3af;'>No records yet</td></tr></tbody>
 
 </table>
 
@@ -1419,51 +1236,7 @@ Records
 
 </thead>
 
-<tbody>
-
-<tr>
-<td>Bank Transfer</td>
-<td>41</td>
-<td>KES 6,300,000</td>
-<td>49%</td>
-</tr>
-
-<tr>
-<td>MPESA</td>
-<td>24</td>
-<td>KES 2,500,000</td>
-<td>19%</td>
-</tr>
-
-<tr>
-<td>Cash</td>
-<td>18</td>
-<td>KES 1,400,000</td>
-<td>11%</td>
-</tr>
-
-<tr>
-<td>Cheque</td>
-<td>15</td>
-<td>KES 1,200,000</td>
-<td>9%</td>
-</tr>
-
-<tr>
-<td>EFT</td>
-<td>12</td>
-<td>KES 980,000</td>
-<td>8%</td>
-</tr>
-
-<tr>
-<td>Credit Card</td>
-<td>8</td>
-<td>KES 470,000</td>
-<td>4%</td>
-</tr>
-
-</tbody>
+<tbody><tr><td colspan='20' style='text-align:center;padding:24px;color:#9ca3af;'>No records yet</td></tr></tbody>
 
 </table>
 
@@ -1743,73 +1516,7 @@ requiring follow-up before month end.
 
 </thead>
 
-<tbody>
-
-<tr>
-
-<td>30 Jun 2026</td>
-
-<td>REV00001</td>
-
-<td>ABC Builders Ltd</td>
-
-<td>Westlands Heights</td>
-
-<td>KES 850,000</td>
-
-<td><span class="status-paid">Paid</span></td>
-
-</tr>
-
-<tr>
-
-<td>29 Jun 2026</td>
-
-<td>REV00002</td>
-
-<td>Prime Holdings</td>
-
-<td>Office Complex</td>
-
-<td>KES 300,000</td>
-
-<td><span class="status-partial">Partial</span></td>
-
-</tr>
-
-<tr>
-
-<td>28 Jun 2026</td>
-
-<td>REV00003</td>
-
-<td>Green City Ltd</td>
-
-<td>Residential Estate</td>
-
-<td>KES 1,200,000</td>
-
-<td><span class="status-pending">Pending</span></td>
-
-</tr>
-
-<tr>
-
-<td>27 Jun 2026</td>
-
-<td>REV00004</td>
-
-<td>Blue Stone Ltd</td>
-
-<td>Shopping Mall</td>
-
-<td>KES 2,650,000</td>
-
-<td><span class="status-paid">Paid</span></td>
-
-</tr>
-
-</tbody>
+<tbody><tr><td colspan='20' style='text-align:center;padding:24px;color:#9ca3af;'>No records yet</td></tr></tbody>
 
 </table>
 
@@ -3458,6 +3165,518 @@ maintainAspectRatio:false
 }
 </script>
 
+<style>
+.page-section[hidden]{display:none}
+.placeholder-page{background:#fff;border:1px dashed #cbd5e1;border-radius:12px;padding:60px 30px;text-align:center;color:#475569;margin-top:20px}
+.placeholder-page h2{font-size:26px;font-weight:700;color:#062b69;margin-bottom:8px}
+.placeholder-page p{font-size:14px;color:#6b7280}
+</style>
+<script>
+(function(){
+  function slug(s){return s.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');}
+  var links = Array.from(document.querySelectorAll('.sidebar a'));
+  if(!links.length) return;
+  var content = document.querySelector('.main .content') || document.querySelector('.main');
+  if(!content) return;
+
+  // Determine active link (or first)
+  var activeLink = links.find(function(a){return a.classList.contains('active');}) || links[0];
+  var activeSlug = slug(activeLink.textContent.trim());
+
+  // Wrap existing content children into an active page-section
+  var section = document.createElement('section');
+  section.className = 'page-section';
+  section.setAttribute('data-page', activeSlug);
+  while(content.firstChild){ section.appendChild(content.firstChild); }
+  content.appendChild(section);
+
+  // Assign data-page to each link and build placeholders for the rest
+  links.forEach(function(a){
+    var label = a.textContent.trim();
+    var s = slug(label);
+    a.setAttribute('data-page', s);
+    a.setAttribute('href', '#'+s);
+    if(s !== activeSlug){
+      var ph = document.createElement('section');
+      ph.className = 'page-section';
+      ph.setAttribute('data-page', s);
+      ph.hidden = true;
+      ph.innerHTML = '<div class="placeholder-page"><h2>'+label+'</h2><p>This module is coming soon.</p></div>';
+      content.appendChild(ph);
+    }
+  });
+
+  function show(p){
+    document.querySelectorAll('.page-section').forEach(function(sec){
+      sec.hidden = sec.getAttribute('data-page') !== p;
+    });
+    links.forEach(function(a){
+      a.classList.toggle('active', a.getAttribute('data-page') === p);
+    });
+    var titleEl = document.querySelector('.title h1, .header-title h2, .header h1, .header h2');
+    if(titleEl){
+      var link = links.find(function(a){return a.getAttribute('data-page')===p;});
+      if(link) titleEl.textContent = link.textContent.trim();
+    }
+    if(location.hash !== '#'+p) history.replaceState(null,'','#'+p);
+    window.scrollTo(0,0);
+  }
+
+  links.forEach(function(a){
+    a.addEventListener('click', function(e){
+      e.preventDefault();
+      show(a.getAttribute('data-page'));
+    });
+  });
+
+  var initial = (location.hash||'').replace('#','') || activeSlug;
+  if(!document.querySelector('.page-section[data-page="'+initial+'"]')) initial = activeSlug;
+  show(initial);
+})();
+</script>
+
+<!-- MODULE BUNDLE -->
+<style>
+.mod-page{padding:20px;font-family:Inter,system-ui,sans-serif;color:#0f172a;}
+.mod-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px;flex-wrap:wrap;}
+.mod-title{display:flex;align-items:center;gap:10px;}
+.mod-title h2{font-size:22px;font-weight:700;color:#062b69;margin:0;}
+.mod-icon{font-size:26px;}
+.mod-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+.mod-search{height:36px;padding:0 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;min-width:200px;outline:none;}
+.mod-search:focus{border-color:#3b82f6;}
+.mod-btn{height:36px;padding:0 14px;border:1px solid #cbd5e1;background:#fff;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;color:#334155;}
+.mod-btn:hover{background:#f1f5f9;}
+.mod-btn-primary{background:#0d4ca8;color:#fff;border-color:#0d4ca8;}
+.mod-btn-primary:hover{background:#0a3a85;}
+.mod-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:18px;}
+.mod-kpi{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px 18px;box-shadow:0 1px 3px rgba(0,0,0,.03);}
+.mod-kpi-label{font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:.05em;font-weight:600;}
+.mod-kpi-value{font-size:24px;font-weight:700;color:#0f172a;margin-top:6px;}
+.mod-kpi-change{font-size:12px;color:#059669;margin-top:4px;font-weight:500;}
+.mod-tablewrap{background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.03);}
+.mod-table{width:100%;border-collapse:collapse;font-size:13px;}
+.mod-table th{background:#f8fafc;color:#475569;font-weight:600;text-align:left;padding:12px 14px;border-bottom:1px solid #e2e8f0;font-size:12px;text-transform:uppercase;letter-spacing:.03em;}
+.mod-table td{padding:12px 14px;border-bottom:1px solid #f1f5f9;color:#1e293b;}
+.mod-table tr:hover{background:#f8fafc;}
+.mod-table tr:last-child td{border-bottom:none;}
+.mod-badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;}
+.mod-b-green{background:#dcfce7;color:#166534;}
+.mod-b-blue{background:#dbeafe;color:#1e40af;}
+.mod-b-red{background:#fee2e2;color:#991b1b;}
+.mod-chart-wrap{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin-bottom:18px;}
+.mod-form{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px;margin-top:18px;}
+.mod-form h3{font-size:16px;font-weight:600;color:#062b69;margin:0 0 14px;}
+.mod-form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-bottom:16px;}
+.mod-form-grid label{display:flex;flex-direction:column;font-size:12px;font-weight:600;color:#475569;gap:6px;}
+.mod-form-grid input,.mod-form-grid select{height:38px;padding:0 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;font-family:inherit;outline:none;}
+.mod-form-grid input:focus,.mod-form-grid select:focus{border-color:#3b82f6;}
+</style>
+<script>
+(function(){
+  var MODS = {"dashboard":"<div class=\"mod-page\">\n      <div class=\"mod-toolbar\">\n        <div class=\"mod-title\"><span class=\"mod-icon\">\ud83d\udcca</span><h2>Dashboard</h2></div>\n        <div class=\"mod-actions\">\n          <input class=\"mod-search\" type=\"search\" placeholder=\"Search...\"/>\n          <button class=\"mod-btn\" type=\"button\" onclick=\"alert('Filter panel')\">Filter</button>\n          <button class=\"mod-btn\" type=\"button\" onclick=\"alert('Exported CSV')\">Export</button>\n          <button class=\"mod-btn mod-btn-primary\" type=\"button\" onclick=\"alert('New record dialog')\">+ New</button>\n        </div>\n      </div>\n      <div class=\"mod-kpis\"><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Total Revenue</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Outstanding</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Collected (MTD)</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Overdue</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div></div>\n      <div class=\"mod-chart-wrap\"><canvas id=\"chart-dashboard\" height=\"90\"></canvas></div>\n      <div class=\"mod-tablewrap\">\n        <table class=\"mod-table\"><thead><tr><th>Project</th><th>Client</th><th>Contract</th><th>Billed</th><th>Collected</th><th>Status</th></tr></thead><tbody><tr><td colspan='20' style='text-align:center;padding:24px;color:#9ca3af;'>No records yet</td></tr></tbody></table>\n      </div>\n      \n    </div>","customers":"<div class=\"mod-page\">\n      <div class=\"mod-toolbar\">\n        <div class=\"mod-title\"><span class=\"mod-icon\">\ud83d\udc65</span><h2>Customers</h2></div>\n        <div class=\"mod-actions\">\n          <input class=\"mod-search\" type=\"search\" placeholder=\"Search...\"/>\n          <button class=\"mod-btn\" type=\"button\" onclick=\"alert('Filter panel')\">Filter</button>\n          <button class=\"mod-btn\" type=\"button\" onclick=\"alert('Exported CSV')\">Export</button>\n          <button class=\"mod-btn mod-btn-primary\" type=\"button\" onclick=\"alert('New record dialog')\">+ New</button>\n        </div>\n      </div>\n      <div class=\"mod-kpis\"><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Clients</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Active</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Top 10 Share</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Avg Ticket</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div></div>\n      \n      <div class=\"mod-tablewrap\">\n        <table class=\"mod-table\"><thead><tr><th>Client</th><th>Projects</th><th>Contracts</th><th>Billed</th><th>Balance</th><th>Status</th></tr></thead><tbody><tr><td colspan='20' style='text-align:center;padding:24px;color:#9ca3af;'>No records yet</td></tr></tbody></table>\n      </div>\n      \n    </div>","projects":"<div class=\"mod-page\">\n      <div class=\"mod-toolbar\">\n        <div class=\"mod-title\"><span class=\"mod-icon\">\ud83c\udfd7</span><h2>Projects</h2></div>\n        <div class=\"mod-actions\">\n          <input class=\"mod-search\" type=\"search\" placeholder=\"Search...\"/>\n          <button class=\"mod-btn\" type=\"button\" onclick=\"alert('Filter panel')\">Filter</button>\n          <button class=\"mod-btn\" type=\"button\" onclick=\"alert('Exported CSV')\">Export</button>\n          <button class=\"mod-btn mod-btn-primary\" type=\"button\" onclick=\"alert('New record dialog')\">+ New</button>\n        </div>\n      </div>\n      <div class=\"mod-kpis\"><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Active Projects</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Delayed</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Avg Margin</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Backlog</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div></div>\n      \n      <div class=\"mod-tablewrap\">\n        <table class=\"mod-table\"><thead><tr><th>Project</th><th>Client</th><th>Start</th><th>End</th><th>Contract</th><th>% Complete</th><th>Status</th></tr></thead><tbody><tr><td colspan='20' style='text-align:center;padding:24px;color:#9ca3af;'>No records yet</td></tr></tbody></table>\n      </div>\n      \n    </div>","estimates":"<div class=\"mod-page\">\n      <div class=\"mod-toolbar\">\n        <div class=\"mod-title\"><span class=\"mod-icon\">\ud83e\uddfe</span><h2>Estimates</h2></div>\n        <div class=\"mod-actions\">\n          <input class=\"mod-search\" type=\"search\" placeholder=\"Search...\"/>\n          <button class=\"mod-btn\" type=\"button\" onclick=\"alert('Filter panel')\">Filter</button>\n          <button class=\"mod-btn\" type=\"button\" onclick=\"alert('Exported CSV')\">Export</button>\n          <button class=\"mod-btn mod-btn-primary\" type=\"button\" onclick=\"alert('New record dialog')\">+ New</button>\n        </div>\n      </div>\n      <div class=\"mod-kpis\"><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Open Estimates</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Value</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Accepted</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Win Rate</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div></div>\n      \n      <div class=\"mod-tablewrap\">\n        <table class=\"mod-table\"><thead><tr><th>Estimate #</th><th>Project</th><th>Client</th><th>Amount</th><th>Issued</th><th>Valid Till</th><th>Status</th></tr></thead><tbody><tr><td colspan='20' style='text-align:center;padding:24px;color:#9ca3af;'>No records yet</td></tr></tbody></table>\n      </div>\n      \n    </div>","invoices":"<div class=\"mod-page\">\n      <div class=\"mod-toolbar\">\n        <div class=\"mod-title\"><span class=\"mod-icon\">\ud83d\udcc4</span><h2>Invoices</h2></div>\n        <div class=\"mod-actions\">\n          <input class=\"mod-search\" type=\"search\" placeholder=\"Search...\"/>\n          <button class=\"mod-btn\" type=\"button\" onclick=\"alert('Filter panel')\">Filter</button>\n          <button class=\"mod-btn\" type=\"button\" onclick=\"alert('Exported CSV')\">Export</button>\n          <button class=\"mod-btn mod-btn-primary\" type=\"button\" onclick=\"alert('New record dialog')\">+ New</button>\n        </div>\n      </div>\n      <div class=\"mod-kpis\"><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Invoices</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Outstanding</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Overdue</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Avg Days to Pay</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div></div>\n      \n      <div class=\"mod-tablewrap\">\n        <table class=\"mod-table\"><thead><tr><th>Invoice #</th><th>Project</th><th>Client</th><th>Amount</th><th>Issued</th><th>Due</th><th>Status</th></tr></thead><tbody><tr><td colspan='20' style='text-align:center;padding:24px;color:#9ca3af;'>No records yet</td></tr></tbody></table>\n      </div>\n      \n    </div>","payments":"<div class=\"mod-page\">\n      <div class=\"mod-toolbar\">\n        <div class=\"mod-title\"><span class=\"mod-icon\">\ud83d\udcb3</span><h2>Payments</h2></div>\n        <div class=\"mod-actions\">\n          <input class=\"mod-search\" type=\"search\" placeholder=\"Search...\"/>\n          <button class=\"mod-btn\" type=\"button\" onclick=\"alert('Filter panel')\">Filter</button>\n          <button class=\"mod-btn\" type=\"button\" onclick=\"alert('Exported CSV')\">Export</button>\n          <button class=\"mod-btn mod-btn-primary\" type=\"button\" onclick=\"alert('New record dialog')\">+ New</button>\n        </div>\n      </div>\n      <div class=\"mod-kpis\"><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Received (MTD)</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Pending</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Refunds</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Avg Payment</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div></div>\n      \n      <div class=\"mod-tablewrap\">\n        <table class=\"mod-table\"><thead><tr><th>Date</th><th>Invoice #</th><th>Client</th><th>Method</th><th>Amount</th><th>Reference</th><th>Status</th></tr></thead><tbody><tr><td colspan='20' style='text-align:center;padding:24px;color:#9ca3af;'>No records yet</td></tr></tbody></table>\n      </div>\n      \n    </div>","expenses":"<div class=\"mod-page\">\n      <div class=\"mod-toolbar\">\n        <div class=\"mod-title\"><span class=\"mod-icon\">\ud83d\udcb8</span><h2>Expenses</h2></div>\n        <div class=\"mod-actions\">\n          <input class=\"mod-search\" type=\"search\" placeholder=\"Search...\"/>\n          <button class=\"mod-btn\" type=\"button\" onclick=\"alert('Filter panel')\">Filter</button>\n          <button class=\"mod-btn\" type=\"button\" onclick=\"alert('Exported CSV')\">Export</button>\n          <button class=\"mod-btn mod-btn-primary\" type=\"button\" onclick=\"alert('New record dialog')\">+ New</button>\n        </div>\n      </div>\n      <div class=\"mod-kpis\"><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Expenses (MTD)</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Reimbursements</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Vendors</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Approvals Pending</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div></div>\n      \n      <div class=\"mod-tablewrap\">\n        <table class=\"mod-table\"><thead><tr><th>Date</th><th>Vendor</th><th>Category</th><th>Project</th><th>Amount</th><th>Status</th></tr></thead><tbody><tr><td colspan='20' style='text-align:center;padding:24px;color:#9ca3af;'>No records yet</td></tr></tbody></table>\n      </div>\n      \n    </div>","banking":"<div class=\"mod-page\">\n      <div class=\"mod-toolbar\">\n        <div class=\"mod-title\"><span class=\"mod-icon\">\ud83c\udfe6</span><h2>Banking</h2></div>\n        <div class=\"mod-actions\">\n          <input class=\"mod-search\" type=\"search\" placeholder=\"Search...\"/>\n          <button class=\"mod-btn\" type=\"button\" onclick=\"alert('Filter panel')\">Filter</button>\n          <button class=\"mod-btn\" type=\"button\" onclick=\"alert('Exported CSV')\">Export</button>\n          <button class=\"mod-btn mod-btn-primary\" type=\"button\" onclick=\"alert('New record dialog')\">+ New</button>\n        </div>\n      </div>\n      <div class=\"mod-kpis\"><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Cash on Hand</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Accounts</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Reconciled</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Unreconciled</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div></div>\n      \n      <div class=\"mod-tablewrap\">\n        <table class=\"mod-table\"><thead><tr><th>Account</th><th>Bank</th><th>Type</th><th>Balance</th><th>Last Sync</th><th>Status</th></tr></thead><tbody><tr><td colspan='20' style='text-align:center;padding:24px;color:#9ca3af;'>No records yet</td></tr></tbody></table>\n      </div>\n      \n    </div>","reports":"<div class=\"mod-page\">\n      <div class=\"mod-toolbar\">\n        <div class=\"mod-title\"><span class=\"mod-icon\">\ud83d\udcc8</span><h2>Reports</h2></div>\n        <div class=\"mod-actions\">\n          <input class=\"mod-search\" type=\"search\" placeholder=\"Search...\"/>\n          <button class=\"mod-btn\" type=\"button\" onclick=\"alert('Filter panel')\">Filter</button>\n          <button class=\"mod-btn\" type=\"button\" onclick=\"alert('Exported CSV')\">Export</button>\n          <button class=\"mod-btn mod-btn-primary\" type=\"button\" onclick=\"alert('New record dialog')\">+ New</button>\n        </div>\n      </div>\n      <div class=\"mod-kpis\"><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Reports</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Scheduled</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Dashboards</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Last Run</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div></div>\n      <div class=\"mod-chart-wrap\"><canvas id=\"chart-reports\" height=\"90\"></canvas></div>\n      <div class=\"mod-tablewrap\">\n        <table class=\"mod-table\"><thead><tr><th>Report</th><th>Category</th><th>Owner</th><th>Schedule</th><th>Last Run</th><th>Format</th></tr></thead><tbody><tr><td colspan='20' style='text-align:center;padding:24px;color:#9ca3af;'>No records yet</td></tr></tbody></table>\n      </div>\n      \n    </div>","ai-insights":"<div class=\"mod-page\">\n      <div class=\"mod-toolbar\">\n        <div class=\"mod-title\"><span class=\"mod-icon\">\ud83e\udd16</span><h2>Ai Insights</h2></div>\n        <div class=\"mod-actions\">\n          <input class=\"mod-search\" type=\"search\" placeholder=\"Search...\"/>\n          <button class=\"mod-btn\" type=\"button\" onclick=\"alert('Filter panel')\">Filter</button>\n          <button class=\"mod-btn\" type=\"button\" onclick=\"alert('Exported CSV')\">Export</button>\n          <button class=\"mod-btn mod-btn-primary\" type=\"button\" onclick=\"alert('New record dialog')\">+ New</button>\n        </div>\n      </div>\n      <div class=\"mod-kpis\"><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Predictions Live</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Late Payment Risk</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Cost Overrun Risk</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Model Accuracy</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div></div>\n      \n      <div class=\"mod-tablewrap\">\n        <table class=\"mod-table\"><thead><tr><th>Insight</th><th>Target</th><th>Confidence</th><th>Recommended Action</th></tr></thead><tbody><tr><td colspan='20' style='text-align:center;padding:24px;color:#9ca3af;'>No records yet</td></tr></tbody></table>\n      </div>\n      \n    </div>","settings":"<div class=\"mod-page\">\n      <div class=\"mod-toolbar\">\n        <div class=\"mod-title\"><span class=\"mod-icon\">\u2699</span><h2>Settings</h2></div>\n        <div class=\"mod-actions\">\n          <input class=\"mod-search\" type=\"search\" placeholder=\"Search...\"/>\n          <button class=\"mod-btn\" type=\"button\" onclick=\"alert('Filter panel')\">Filter</button>\n          <button class=\"mod-btn\" type=\"button\" onclick=\"alert('Exported CSV')\">Export</button>\n          <button class=\"mod-btn mod-btn-primary\" type=\"button\" onclick=\"alert('New record dialog')\">+ New</button>\n        </div>\n      </div>\n      <div class=\"mod-kpis\"><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Users</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Roles</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Integrations</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">API Keys</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div></div>\n      \n      <div class=\"mod-tablewrap\">\n        <table class=\"mod-table\"><thead><tr><th>Setting</th><th>Value</th><th>Updated</th><th>By</th></tr></thead><tbody><tr><td colspan='20' style='text-align:center;padding:24px;color:#9ca3af;'>No records yet</td></tr></tbody></table>\n      </div>\n      <div class=\"mod-form\"><h3>Update Preferences</h3>\n        <div class=\"mod-form-grid\">\n          <label>Display Name<input value=\"Acacia Books\"/></label>\n          <label>Support Email<input value=\"support@acacia.co\"/></label>\n          <label>Default Currency<select><option>USD</option><option>EUR</option><option>NGN</option></select></label>\n          <label>Time Zone<select><option>Africa/Lagos</option><option>Europe/London</option><option>UTC</option></select></label>\n        </div>\n        <button class=\"mod-btn mod-btn-primary\" type=\"button\" onclick=\"alert('Saved.')\">Save Changes</button></div>\n    </div>","users":"<div class=\"mod-page\">\n      <div class=\"mod-toolbar\">\n        <div class=\"mod-title\"><span class=\"mod-icon\">\ud83d\udc64</span><h2>Users</h2></div>\n        <div class=\"mod-actions\">\n          <input class=\"mod-search\" type=\"search\" placeholder=\"Search...\"/>\n          <button class=\"mod-btn\" type=\"button\" onclick=\"alert('Filter panel')\">Filter</button>\n          <button class=\"mod-btn\" type=\"button\" onclick=\"alert('Exported CSV')\">Export</button>\n          <button class=\"mod-btn mod-btn-primary\" type=\"button\" onclick=\"alert('New record dialog')\">+ New</button>\n        </div>\n      </div>\n      <div class=\"mod-kpis\"><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Users</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Admins</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Active (24h)</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Locked</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div></div>\n      \n      <div class=\"mod-tablewrap\">\n        <table class=\"mod-table\"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Department</th><th>Last Login</th><th>Status</th></tr></thead><tbody><tr><td colspan='20' style='text-align:center;padding:24px;color:#9ca3af;'>No records yet</td></tr></tbody></table>\n      </div>\n      \n    </div>","backup":"<div class=\"mod-page\">\n      <div class=\"mod-toolbar\">\n        <div class=\"mod-title\"><span class=\"mod-icon\">\ud83d\udcbe</span><h2>Backup</h2></div>\n        <div class=\"mod-actions\">\n          <input class=\"mod-search\" type=\"search\" placeholder=\"Search...\"/>\n          <button class=\"mod-btn\" type=\"button\" onclick=\"alert('Filter panel')\">Filter</button>\n          <button class=\"mod-btn\" type=\"button\" onclick=\"alert('Exported CSV')\">Export</button>\n          <button class=\"mod-btn mod-btn-primary\" type=\"button\" onclick=\"alert('New record dialog')\">+ New</button>\n        </div>\n      </div>\n      <div class=\"mod-kpis\"><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Last Backup</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Daily Retention</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Storage Used</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Restore Points</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div></div>\n      \n      <div class=\"mod-tablewrap\">\n        <table class=\"mod-table\"><thead><tr><th>Date</th><th>Type</th><th>Size</th><th>Duration</th><th>Location</th><th>Status</th></tr></thead><tbody><tr><td colspan='20' style='text-align:center;padding:24px;color:#9ca3af;'>No records yet</td></tr></tbody></table>\n      </div>\n      \n    </div>","audit-trail":"<div class=\"mod-page\">\n      <div class=\"mod-toolbar\">\n        <div class=\"mod-title\"><span class=\"mod-icon\">\ud83d\udd12</span><h2>Audit Trail</h2></div>\n        <div class=\"mod-actions\">\n          <input class=\"mod-search\" type=\"search\" placeholder=\"Search...\"/>\n          <button class=\"mod-btn\" type=\"button\" onclick=\"alert('Filter panel')\">Filter</button>\n          <button class=\"mod-btn\" type=\"button\" onclick=\"alert('Exported CSV')\">Export</button>\n          <button class=\"mod-btn mod-btn-primary\" type=\"button\" onclick=\"alert('New record dialog')\">+ New</button>\n        </div>\n      </div>\n      <div class=\"mod-kpis\"><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Events (24h)</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Users Active</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Failed Logins</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Retention</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div></div>\n      \n      <div class=\"mod-tablewrap\">\n        <table class=\"mod-table\"><thead><tr><th>Time</th><th>User</th><th>Action</th><th>Entity</th><th>IP</th><th>Result</th></tr></thead><tbody><tr><td colspan='20' style='text-align:center;padding:24px;color:#9ca3af;'>No records yet</td></tr></tbody></table>\n      </div>\n      \n    </div>","support":"<div class=\"mod-page\">\n      <div class=\"mod-toolbar\">\n        <div class=\"mod-title\"><span class=\"mod-icon\">\ud83c\udfa7</span><h2>Support</h2></div>\n        <div class=\"mod-actions\">\n          <input class=\"mod-search\" type=\"search\" placeholder=\"Search...\"/>\n          <button class=\"mod-btn\" type=\"button\" onclick=\"alert('Filter panel')\">Filter</button>\n          <button class=\"mod-btn\" type=\"button\" onclick=\"alert('Exported CSV')\">Export</button>\n          <button class=\"mod-btn mod-btn-primary\" type=\"button\" onclick=\"alert('New record dialog')\">+ New</button>\n        </div>\n      </div>\n      <div class=\"mod-kpis\"><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Open Tickets</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Avg Response</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Resolved (7d)</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">CSAT</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div></div>\n      \n      <div class=\"mod-tablewrap\">\n        <table class=\"mod-table\"><thead><tr><th>Ticket #</th><th>Subject</th><th>Priority</th><th>Assignee</th><th>Updated</th><th>Status</th></tr></thead><tbody><tr><td colspan='20' style='text-align:center;padding:24px;color:#9ca3af;'>No records yet</td></tr></tbody></table>\n      </div>\n      \n    </div>","help":"<div class=\"mod-page\">\n      <div class=\"mod-toolbar\">\n        <div class=\"mod-title\"><span class=\"mod-icon\">\u2753</span><h2>Help</h2></div>\n        <div class=\"mod-actions\">\n          <input class=\"mod-search\" type=\"search\" placeholder=\"Search...\"/>\n          <button class=\"mod-btn\" type=\"button\" onclick=\"alert('Filter panel')\">Filter</button>\n          <button class=\"mod-btn\" type=\"button\" onclick=\"alert('Exported CSV')\">Export</button>\n          <button class=\"mod-btn mod-btn-primary\" type=\"button\" onclick=\"alert('New record dialog')\">+ New</button>\n        </div>\n      </div>\n      <div class=\"mod-kpis\"><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Articles</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Videos</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Open Tickets</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div><div class=\"mod-kpi\"><div class=\"mod-kpi-label\">Avg Response</div><div class=\"mod-kpi-value\">--</div><div class=\"mod-kpi-change\"></div></div></div>\n      \n      <div class=\"mod-tablewrap\">\n        <table class=\"mod-table\"><thead><tr><th>Topic</th><th>Category</th><th>Views</th><th>Updated</th></tr></thead><tbody><tr><td colspan='20' style='text-align:center;padding:24px;color:#9ca3af;'>No records yet</td></tr></tbody></table>\n      </div>\n      \n    </div>"};
+  function apply(){
+    document.querySelectorAll('.page-section, section[data-page]').forEach(function(sec){
+      var slug = sec.getAttribute('data-page');
+      if(!slug || !MODS[slug]) return;
+      var ph = sec.querySelector('.placeholder-page');
+      if(ph){ sec.innerHTML = MODS[slug]; }
+    });
+    setTimeout(function(){
+      try{var ctx=document.getElementById('chart-dashboard');if(ctx&&window.Chart){new Chart(ctx,{type:'bar',data:{labels:['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug'],datasets:[{label:'Revenue ($K)',data:[180,220,240,210,280,320,340,380],backgroundColor:'#0d4ca8'},{label:'Collected ($K)',data:[160,200,220,190,260,300,320,360],backgroundColor:'#22c55e'}]},options:{responsive:true,plugins:{legend:{position:'top'}}}});}}catch(e){}
+try{var ctx=document.getElementById('chart-reports');if(ctx&&window.Chart){new Chart(ctx,{type:'bar',data:{labels:['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug'],datasets:[{label:'Revenue ($K)',data:[180,220,240,210,280,320,340,380],backgroundColor:'#0d4ca8'},{label:'Collected ($K)',data:[160,200,220,190,260,300,320,360],backgroundColor:'#22c55e'}]},options:{responsive:true,plugins:{legend:{position:'top'}}}});}}catch(e){}
+
+    }, 100);
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',function(){setTimeout(apply,50);});
+  else setTimeout(apply,50);
+  // Re-render charts when navigating
+  document.addEventListener('click',function(e){
+    var a=e.target.closest('.sidebar a, [data-view]');
+    if(!a) return;
+    setTimeout(function(){
+      try{var ctx=document.getElementById('chart-dashboard');if(ctx&&window.Chart){new Chart(ctx,{type:'bar',data:{labels:['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug'],datasets:[{label:'Revenue ($K)',data:[180,220,240,210,280,320,340,380],backgroundColor:'#0d4ca8'},{label:'Collected ($K)',data:[160,200,220,190,260,300,320,360],backgroundColor:'#22c55e'}]},options:{responsive:true,plugins:{legend:{position:'top'}}}});}}catch(e){}
+try{var ctx=document.getElementById('chart-reports');if(ctx&&window.Chart){new Chart(ctx,{type:'bar',data:{labels:['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug'],datasets:[{label:'Revenue ($K)',data:[180,220,240,210,280,320,340,380],backgroundColor:'#0d4ca8'},{label:'Collected ($K)',data:[160,200,220,190,260,300,320,360],backgroundColor:'#22c55e'}]},options:{responsive:true,plugins:{legend:{position:'top'}}}});}}catch(e){}
+
+    }, 200);
+  });
+})();
+</script>
+<!-- /MODULE BUNDLE -->
+
+<!-- Acacia Modular CRUD Bundle -->
+<script>
+/* ===== Acacia Books — Modular CRUD Bundle (v1) ===== */
+(function(){
+  'use strict';
+
+  /* ---------- Preferences ---------- */
+  var PREF_KEY = 'acacia.prefs';
+  function loadPrefs(){
+    try{ return Object.assign({currency:'KES', dateFmt:'YYYY-MM-DD', company:'Acacia Books'}, JSON.parse(localStorage.getItem(PREF_KEY)||'{}')); }
+    catch(e){ return {currency:'KES', dateFmt:'YYYY-MM-DD', company:'Acacia Books'}; }
+  }
+  function savePrefs(p){ localStorage.setItem(PREF_KEY, JSON.stringify(p)); }
+  window.AcaciaPrefs = { get: loadPrefs, set: savePrefs };
+
+  function fmtMoney(v){
+    var p = loadPrefs();
+    var n = Number(v||0);
+    return p.currency + ' ' + n.toLocaleString(undefined,{maximumFractionDigits:2});
+  }
+  function fmtDate(v){ if(!v) return ''; try{ return new Date(v).toISOString().slice(0,10);}catch(e){return v;} }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+
+  /* ---------- Storage ---------- */
+  function keyFor(mod){ return 'acacia.data.'+mod; }
+  function loadRecs(mod){ try{ return JSON.parse(localStorage.getItem(keyFor(mod))||'[]'); }catch(e){ return []; } }
+  function saveRecs(mod,r){ localStorage.setItem(keyFor(mod), JSON.stringify(r)); }
+  function uid(){ return 'r'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+
+  /* ---------- Schemas ---------- */
+  // field types: text, textarea, number, money, date, select, email, tel
+  var S = {
+    /* CRM */
+    customers:{icon:'👥',title:'Customers',fields:[
+      {k:'name',l:'Name',t:'text',req:true},
+      {k:'company',l:'Company',t:'text'},
+      {k:'email',l:'Email',t:'email'},
+      {k:'phone',l:'Phone',t:'tel'},
+      {k:'value',l:'Lifetime Value',t:'money'},
+      {k:'status',l:'Status',t:'select',opts:['Active','Inactive','Prospect']}
+    ],kpis:function(r){return [
+      ['Total',r.length],
+      ['Active',r.filter(function(x){return x.status==='Active';}).length],
+      ['Prospects',r.filter(function(x){return x.status==='Prospect';}).length],
+      ['LTV',fmtMoney(r.reduce(function(a,x){return a+Number(x.value||0);},0))]
+    ];}},
+    leads:{icon:'🧲',title:'Leads',fields:[
+      {k:'name',l:'Lead Name',t:'text',req:true},{k:'company',l:'Company',t:'text'},
+      {k:'source',l:'Source',t:'select',opts:['Web','Referral','Event','Cold Call','Other']},
+      {k:'value',l:'Est. Value',t:'money'},
+      {k:'stage',l:'Stage',t:'select',opts:['New','Qualified','Contacted','Converted','Lost']}
+    ],kpis:function(r){return [
+      ['Leads',r.length],
+      ['Qualified',r.filter(function(x){return x.stage==='Qualified';}).length],
+      ['Converted',r.filter(function(x){return x.stage==='Converted';}).length],
+      ['Pipeline',fmtMoney(r.reduce(function(a,x){return a+Number(x.value||0);},0))]
+    ];}},
+    opportunities:{icon:'💼',title:'Opportunities',fields:[
+      {k:'name',l:'Opportunity',t:'text',req:true},{k:'client',l:'Client',t:'text'},
+      {k:'value',l:'Value',t:'money'},{k:'closeDate',l:'Close Date',t:'date'},
+      {k:'stage',l:'Stage',t:'select',opts:['Prospecting','Proposal','Negotiation','Won','Lost']},
+      {k:'probability',l:'Probability %',t:'number'}
+    ],kpis:function(r){var w=r.filter(function(x){return x.stage==='Won';});return [
+      ['Open',r.filter(function(x){return ['Prospecting','Proposal','Negotiation'].indexOf(x.stage)>=0;}).length],
+      ['Won',w.length],['Won Value',fmtMoney(w.reduce(function(a,x){return a+Number(x.value||0);},0))],
+      ['Weighted',fmtMoney(r.reduce(function(a,x){return a+Number(x.value||0)*Number(x.probability||0)/100;},0))]
+    ];}},
+    companies:{icon:'🏢',title:'Companies',fields:[
+      {k:'name',l:'Company',t:'text',req:true},{k:'industry',l:'Industry',t:'text'},
+      {k:'website',l:'Website',t:'text'},{k:'employees',l:'Employees',t:'number'},
+      {k:'country',l:'Country',t:'text'},{k:'status',l:'Status',t:'select',opts:['Active','Inactive']}
+    ],kpis:function(r){return [['Companies',r.length],['Active',r.filter(function(x){return x.status==='Active';}).length],['Countries',new Set(r.map(function(x){return x.country;}).filter(Boolean)).size],['Employees',r.reduce(function(a,x){return a+Number(x.employees||0);},0).toLocaleString()]];}},
+    contacts:{icon:'📞',title:'Contacts',fields:[
+      {k:'name',l:'Name',t:'text',req:true},{k:'title',l:'Job Title',t:'text'},
+      {k:'company',l:'Company',t:'text'},{k:'email',l:'Email',t:'email'},{k:'phone',l:'Phone',t:'tel'}
+    ],kpis:function(r){return [['Contacts',r.length],['With Email',r.filter(function(x){return x.email;}).length],['With Phone',r.filter(function(x){return x.phone;}).length],['Companies',new Set(r.map(function(x){return x.company;}).filter(Boolean)).size]];}},
+    quotations:{icon:'📋',title:'Quotations',fields:[
+      {k:'number',l:'Quote #',t:'text',req:true},{k:'client',l:'Client',t:'text'},
+      {k:'amount',l:'Amount',t:'money'},{k:'issued',l:'Issued',t:'date'},
+      {k:'validTill',l:'Valid Till',t:'date'},
+      {k:'status',l:'Status',t:'select',opts:['Draft','Sent','Accepted','Rejected','Expired']}
+    ],kpis:function(r){var a=r.filter(function(x){return x.status==='Accepted';});return [['Quotes',r.length],['Value',fmtMoney(r.reduce(function(t,x){return t+Number(x.amount||0);},0))],['Accepted',a.length],['Win Rate',(r.length?Math.round(a.length/r.length*100):0)+'%']];}},
+    contracts:{icon:'📑',title:'Contracts',fields:[
+      {k:'number',l:'Contract #',t:'text',req:true},{k:'client',l:'Client',t:'text'},
+      {k:'value',l:'Contract Value',t:'money'},{k:'start',l:'Start',t:'date'},{k:'end',l:'End',t:'date'},
+      {k:'status',l:'Status',t:'select',opts:['Active','Pending','Expired','Terminated']}
+    ],kpis:function(r){var a=r.filter(function(x){return x.status==='Active';});return [['Contracts',r.length],['Active',a.length],['Active Value',fmtMoney(a.reduce(function(t,x){return t+Number(x.value||0);},0))],['Expiring 30d',r.filter(function(x){var d=new Date(x.end);return x.status==='Active'&&d-new Date()<30*864e5&&d>new Date();}).length]];}},
+    calendar:{icon:'📅',title:'Calendar',fields:[
+      {k:'title',l:'Event',t:'text',req:true},{k:'date',l:'Date',t:'date',req:true},
+      {k:'time',l:'Time',t:'text'},{k:'with',l:'With',t:'text'},{k:'notes',l:'Notes',t:'textarea'}
+    ],kpis:function(r){var t=new Date().toISOString().slice(0,10);return [['Events',r.length],['Today',r.filter(function(x){return x.date===t;}).length],['Upcoming',r.filter(function(x){return x.date>t;}).length],['Past',r.filter(function(x){return x.date<t;}).length]];}},
+    calls:{icon:'📞',title:'Calls',fields:[
+      {k:'contact',l:'Contact',t:'text',req:true},{k:'phone',l:'Phone',t:'tel'},
+      {k:'date',l:'Date',t:'date'},{k:'duration',l:'Duration (min)',t:'number'},
+      {k:'direction',l:'Direction',t:'select',opts:['Inbound','Outbound']},
+      {k:'outcome',l:'Outcome',t:'select',opts:['Answered','Voicemail','No Answer','Follow-up']},
+      {k:'notes',l:'Notes',t:'textarea'}
+    ],kpis:function(r){return [['Calls',r.length],['Inbound',r.filter(function(x){return x.direction==='Inbound';}).length],['Outbound',r.filter(function(x){return x.direction==='Outbound';}).length],['Total Minutes',r.reduce(function(a,x){return a+Number(x.duration||0);},0)]];}},
+    meetings:{icon:'🤝',title:'Meetings',fields:[
+      {k:'title',l:'Meeting',t:'text',req:true},{k:'date',l:'Date',t:'date'},
+      {k:'attendees',l:'Attendees',t:'text'},{k:'location',l:'Location',t:'text'},
+      {k:'status',l:'Status',t:'select',opts:['Scheduled','Completed','Cancelled']},
+      {k:'notes',l:'Notes',t:'textarea'}
+    ],kpis:function(r){return [['Meetings',r.length],['Completed',r.filter(function(x){return x.status==='Completed';}).length],['Scheduled',r.filter(function(x){return x.status==='Scheduled';}).length],['Cancelled',r.filter(function(x){return x.status==='Cancelled';}).length]];}},
+    tasks:{icon:'✅',title:'Tasks',fields:[
+      {k:'title',l:'Task',t:'text',req:true},{k:'assignee',l:'Assignee',t:'text'},
+      {k:'due',l:'Due',t:'date'},{k:'priority',l:'Priority',t:'select',opts:['Low','Medium','High','Urgent']},
+      {k:'status',l:'Status',t:'select',opts:['Todo','In Progress','Done']}
+    ],kpis:function(r){var t=new Date().toISOString().slice(0,10);return [['Tasks',r.length],['Open',r.filter(function(x){return x.status!=='Done';}).length],['Done',r.filter(function(x){return x.status==='Done';}).length],['Overdue',r.filter(function(x){return x.status!=='Done'&&x.due&&x.due<t;}).length]];}},
+    email:{icon:'📧',title:'Email',fields:[
+      {k:'to',l:'To',t:'email',req:true},{k:'subject',l:'Subject',t:'text',req:true},
+      {k:'date',l:'Date',t:'date'},{k:'status',l:'Status',t:'select',opts:['Draft','Sent','Delivered','Bounced']},
+      {k:'body',l:'Body',t:'textarea'}
+    ],kpis:function(r){return [['Emails',r.length],['Sent',r.filter(function(x){return x.status==='Sent'||x.status==='Delivered';}).length],['Drafts',r.filter(function(x){return x.status==='Draft';}).length],['Bounced',r.filter(function(x){return x.status==='Bounced';}).length]];}},
+    documents:{icon:'📂',title:'Documents',fields:[
+      {k:'name',l:'Document',t:'text',req:true},{k:'type',l:'Type',t:'select',opts:['Contract','Proposal','Invoice','Report','Other']},
+      {k:'client',l:'Client',t:'text'},{k:'date',l:'Uploaded',t:'date'},{k:'url',l:'URL',t:'text'}
+    ],kpis:function(r){return [['Documents',r.length],['Contracts',r.filter(function(x){return x.type==='Contract';}).length],['Proposals',r.filter(function(x){return x.type==='Proposal';}).length],['Reports',r.filter(function(x){return x.type==='Report';}).length]];}},
+    reports:{icon:'📊',title:'Reports',fields:[
+      {k:'name',l:'Report',t:'text',req:true},{k:'type',l:'Type',t:'select',opts:['Sales','Pipeline','Activity','Financial']},
+      {k:'period',l:'Period',t:'text'},{k:'created',l:'Created',t:'date'}
+    ],kpis:function(r){return [['Reports',r.length],['Sales',r.filter(function(x){return x.type==='Sales';}).length],['Pipeline',r.filter(function(x){return x.type==='Pipeline';}).length],['Financial',r.filter(function(x){return x.type==='Financial';}).length]];}},
+    'ai-insights':{icon:'🤖',title:'AI Insights',fields:[
+      {k:'insight',l:'Insight',t:'text',req:true},{k:'category',l:'Category',t:'select',opts:['Sales','Risk','Opportunity','Churn']},
+      {k:'confidence',l:'Confidence %',t:'number'},{k:'date',l:'Date',t:'date'},{k:'details',l:'Details',t:'textarea'}
+    ],kpis:function(r){return [['Insights',r.length],['High Conf.',r.filter(function(x){return Number(x.confidence||0)>=80;}).length],['Opportunities',r.filter(function(x){return x.category==='Opportunity';}).length],['Risks',r.filter(function(x){return x.category==='Risk';}).length]];}},
+    notifications:{icon:'🔔',title:'Notifications',fields:[
+      {k:'title',l:'Title',t:'text',req:true},{k:'type',l:'Type',t:'select',opts:['Info','Warning','Success','Error']},
+      {k:'date',l:'Date',t:'date'},{k:'read',l:'Status',t:'select',opts:['Unread','Read']},
+      {k:'message',l:'Message',t:'textarea'}
+    ],kpis:function(r){return [['Total',r.length],['Unread',r.filter(function(x){return x.read==='Unread'||!x.read;}).length],['Warnings',r.filter(function(x){return x.type==='Warning';}).length],['Errors',r.filter(function(x){return x.type==='Error';}).length]];}},
+    'audit-trail':{icon:'🔒',title:'Audit Trail',fields:[
+      {k:'user',l:'User',t:'text',req:true},{k:'action',l:'Action',t:'text',req:true},
+      {k:'entity',l:'Entity',t:'text'},{k:'date',l:'Timestamp',t:'date'},{k:'ip',l:'IP',t:'text'}
+    ],kpis:function(r){var t=new Date().toISOString().slice(0,10);return [['Events',r.length],['Today',r.filter(function(x){return x.date===t;}).length],['Users',new Set(r.map(function(x){return x.user;}).filter(Boolean)).size],['Entities',new Set(r.map(function(x){return x.entity;}).filter(Boolean)).size]];}},
+    help:{icon:'❓',title:'Help & Support',fields:[
+      {k:'topic',l:'Topic',t:'text',req:true},{k:'category',l:'Category',t:'select',opts:['Getting Started','FAQ','Ticket','Guide']},
+      {k:'status',l:'Status',t:'select',opts:['Open','Resolved','Pending']},{k:'content',l:'Content',t:'textarea'}
+    ],kpis:function(r){return [['Topics',r.length],['Open Tickets',r.filter(function(x){return x.category==='Ticket'&&x.status==='Open';}).length],['Resolved',r.filter(function(x){return x.status==='Resolved';}).length],['Guides',r.filter(function(x){return x.category==='Guide';}).length]];}},
+
+    /* Projects extras */
+    estimates:{icon:'🧾',title:'Estimates',fields:[
+      {k:'number',l:'Estimate #',t:'text',req:true},{k:'project',l:'Project',t:'text'},
+      {k:'client',l:'Client',t:'text'},{k:'amount',l:'Amount',t:'money'},
+      {k:'issued',l:'Issued',t:'date'},{k:'validTill',l:'Valid Till',t:'date'},
+      {k:'status',l:'Status',t:'select',opts:['Draft','Sent','Accepted','Rejected','Expired']}
+    ],kpis:function(r){var a=r.filter(function(x){return x.status==='Accepted';});return [['Open',r.filter(function(x){return x.status!=='Accepted'&&x.status!=='Rejected';}).length],['Value',fmtMoney(r.reduce(function(t,x){return t+Number(x.amount||0);},0))],['Accepted',a.length],['Win Rate',(r.length?Math.round(a.length/r.length*100):0)+'%']];}},
+    invoices:{icon:'📄',title:'Invoices',fields:[
+      {k:'number',l:'Invoice #',t:'text',req:true},{k:'project',l:'Project',t:'text'},
+      {k:'client',l:'Client',t:'text'},{k:'amount',l:'Amount',t:'money'},
+      {k:'issued',l:'Issued',t:'date'},{k:'due',l:'Due',t:'date'},
+      {k:'status',l:'Status',t:'select',opts:['Draft','Sent','Paid','Overdue','Cancelled']}
+    ],kpis:function(r){var t=new Date().toISOString().slice(0,10);return [['Invoices',r.length],['Outstanding',fmtMoney(r.filter(function(x){return x.status!=='Paid';}).reduce(function(a,x){return a+Number(x.amount||0);},0))],['Overdue',r.filter(function(x){return x.status!=='Paid'&&x.due&&x.due<t;}).length],['Paid',fmtMoney(r.filter(function(x){return x.status==='Paid';}).reduce(function(a,x){return a+Number(x.amount||0);},0))]];}},
+    payments:{icon:'💳',title:'Payments',fields:[
+      {k:'reference',l:'Reference',t:'text',req:true},{k:'invoice',l:'Invoice #',t:'text'},
+      {k:'client',l:'Client',t:'text'},{k:'amount',l:'Amount',t:'money'},
+      {k:'date',l:'Date',t:'date'},{k:'method',l:'Method',t:'select',opts:['M-Pesa','Bank Transfer','Card','Cash','Cheque']},
+      {k:'status',l:'Status',t:'select',opts:['Pending','Received','Refunded','Failed']}
+    ],kpis:function(r){return [['Payments',r.length],['Received',fmtMoney(r.filter(function(x){return x.status==='Received';}).reduce(function(a,x){return a+Number(x.amount||0);},0))],['Pending',r.filter(function(x){return x.status==='Pending';}).length],['Refunds',r.filter(function(x){return x.status==='Refunded';}).length]];}},
+    expenses:{icon:'💸',title:'Expenses',fields:[
+      {k:'category',l:'Category',t:'select',opts:['Materials','Labour','Travel','Utilities','Software','Other']},
+      {k:'vendor',l:'Vendor',t:'text'},{k:'amount',l:'Amount',t:'money'},
+      {k:'date',l:'Date',t:'date'},{k:'status',l:'Status',t:'select',opts:['Pending','Approved','Paid','Rejected']}
+    ],kpis:function(r){return [['Entries',r.length],['Total',fmtMoney(r.reduce(function(a,x){return a+Number(x.amount||0);},0))],['Paid',fmtMoney(r.filter(function(x){return x.status==='Paid';}).reduce(function(a,x){return a+Number(x.amount||0);},0))],['Pending',r.filter(function(x){return x.status==='Pending';}).length]];}},
+    banking:{icon:'🏦',title:'Banking',fields:[
+      {k:'bank',l:'Bank',t:'text',req:true},{k:'account',l:'Account #',t:'text'},
+      {k:'type',l:'Type',t:'select',opts:['Current','Savings','M-Pesa','Loan']},
+      {k:'balance',l:'Balance',t:'money'},{k:'currency',l:'Currency',t:'select',opts:['KES','USD','EUR','GBP']}
+    ],kpis:function(r){return [['Accounts',r.length],['Total Balance',fmtMoney(r.reduce(function(a,x){return a+Number(x.balance||0);},0))],['Banks',new Set(r.map(function(x){return x.bank;})).size],['M-Pesa',r.filter(function(x){return x.type==='M-Pesa';}).length]];}},
+    users:{icon:'👤',title:'Users',fields:[
+      {k:'name',l:'Name',t:'text',req:true},{k:'email',l:'Email',t:'email',req:true},
+      {k:'role',l:'Role',t:'select',opts:['Admin','Manager','Accountant','Viewer']},
+      {k:'status',l:'Status',t:'select',opts:['Active','Inactive','Invited']}
+    ],kpis:function(r){return [['Users',r.length],['Active',r.filter(function(x){return x.status==='Active';}).length],['Admins',r.filter(function(x){return x.role==='Admin';}).length],['Invited',r.filter(function(x){return x.status==='Invited';}).length]];}},
+    backup:{icon:'💾',title:'Backup',fields:[
+      {k:'name',l:'Backup',t:'text',req:true},{k:'date',l:'Date',t:'date'},
+      {k:'size',l:'Size (MB)',t:'number'},{k:'type',l:'Type',t:'select',opts:['Full','Incremental','Manual']},
+      {k:'status',l:'Status',t:'select',opts:['Completed','Failed','Running']}
+    ],kpis:function(r){return [['Backups',r.length],['Completed',r.filter(function(x){return x.status==='Completed';}).length],['Failed',r.filter(function(x){return x.status==='Failed';}).length],['Size (MB)',r.reduce(function(a,x){return a+Number(x.size||0);},0).toLocaleString()]];}},
+    support:{icon:'🛟',title:'Support',fields:[
+      {k:'subject',l:'Subject',t:'text',req:true},{k:'requester',l:'Requester',t:'text'},
+      {k:'priority',l:'Priority',t:'select',opts:['Low','Medium','High','Urgent']},
+      {k:'status',l:'Status',t:'select',opts:['Open','In Progress','Resolved','Closed']},
+      {k:'date',l:'Date',t:'date'},{k:'message',l:'Message',t:'textarea'}
+    ],kpis:function(r){return [['Tickets',r.length],['Open',r.filter(function(x){return x.status==='Open';}).length],['Resolved',r.filter(function(x){return x.status==='Resolved';}).length],['Urgent',r.filter(function(x){return x.priority==='Urgent';}).length]];}}
+  };
+
+  /* ---------- Styles ---------- */
+  var css = ''
+    +'.ax-page{padding:20px;font-family:Inter,system-ui,sans-serif;color:#0f172a;}'
+    +'.ax-toolbar{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:16px;}'
+    +'.ax-title{display:flex;align-items:center;gap:10px;}'
+    +'.ax-title h2{margin:0;font-size:22px;font-weight:700;color:#062b69;}'
+    +'.ax-icon{font-size:24px;}'
+    +'.ax-actions{display:flex;gap:8px;flex-wrap:wrap;}'
+    +'.ax-search{padding:8px 12px;border:1px solid #e2e8f0;border-radius:8px;min-width:200px;font-size:14px;}'
+    +'.ax-btn{padding:8px 14px;border:1px solid #e2e8f0;background:#fff;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;color:#334155;}'
+    +'.ax-btn:hover{background:#f1f5f9;}'
+    +'.ax-btn-primary{background:#062b69;color:#fff;border-color:#062b69;}'
+    +'.ax-btn-primary:hover{background:#0a3a8c;}'
+    +'.ax-btn-danger{background:#dc2626;color:#fff;border-color:#dc2626;}'
+    +'.ax-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:20px;}'
+    +'.ax-kpi{background:#fff;padding:16px 18px;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.06);border:1px solid #eef2f7;}'
+    +'.ax-kpi-label{font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;}'
+    +'.ax-kpi-value{font-size:22px;font-weight:700;color:#062b69;}'
+    +'.ax-tablewrap{background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06);border:1px solid #eef2f7;}'
+    +'.ax-table{width:100%;border-collapse:collapse;font-size:13px;}'
+    +'.ax-table thead th{background:#f8fafc;text-align:left;padding:12px;font-weight:600;color:#475569;border-bottom:1px solid #e2e8f0;font-size:12px;text-transform:uppercase;letter-spacing:.3px;}'
+    +'.ax-table tbody td{padding:12px;border-bottom:1px solid #f1f5f9;color:#334155;}'
+    +'.ax-table tbody tr:hover{background:#f8fafc;}'
+    +'.ax-empty{text-align:center;padding:40px;color:#9ca3af;}'
+    +'.ax-row-actions button{margin-right:4px;padding:4px 8px;font-size:12px;}'
+    +'.ax-modal-bg{position:fixed;inset:0;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px;}'
+    +'.ax-modal{background:#fff;border-radius:12px;padding:24px;max-width:520px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3);}'
+    +'.ax-modal h3{margin:0 0 16px;color:#062b69;font-size:18px;}'
+    +'.ax-field{margin-bottom:12px;}'
+    +'.ax-field label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:4px;text-transform:uppercase;letter-spacing:.3px;}'
+    +'.ax-field input,.ax-field select,.ax-field textarea{width:100%;padding:9px 11px;border:1px solid #e2e8f0;border-radius:6px;font-size:14px;font-family:inherit;box-sizing:border-box;}'
+    +'.ax-field textarea{min-height:80px;resize:vertical;}'
+    +'.ax-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px;}'
+    +'.ax-badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;background:#e0e7ff;color:#3730a3;}'
+    +'.ax-badge-ok{background:#dcfce7;color:#166534;}'
+    +'.ax-badge-warn{background:#fef3c7;color:#92400e;}'
+    +'.ax-badge-err{background:#fee2e2;color:#991b1b;}'
+    +'.ax-prefs{background:#fff;padding:24px;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.06);border:1px solid #eef2f7;max-width:560px;}';
+  var st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
+
+  /* ---------- Renderer ---------- */
+  function badgeCls(v){
+    var s=String(v||'').toLowerCase();
+    if(/(active|paid|received|done|completed|accepted|resolved|won|delivered|sent)/.test(s)) return 'ax-badge ax-badge-ok';
+    if(/(pending|draft|todo|scheduled|new|prospect|open|unread|in progress)/.test(s)) return 'ax-badge';
+    if(/(warning|expiring|qualified|contacted|proposal|negotiation)/.test(s)) return 'ax-badge ax-badge-warn';
+    if(/(overdue|error|cancel|reject|lost|failed|bounced|expired|inactive|terminated|refund|urgent|high)/.test(s)) return 'ax-badge ax-badge-err';
+    return 'ax-badge';
+  }
+  function cellVal(f,v){
+    if(v==null||v==='') return '<span style="color:#cbd5e1;">—</span>';
+    if(f.t==='money') return esc(fmtMoney(v));
+    if(f.t==='date') return esc(fmtDate(v));
+    if(f.t==='select') return '<span class="'+badgeCls(v)+'">'+esc(v)+'</span>';
+    return esc(v);
+  }
+  function inputFor(f,val){
+    val = val==null?'':val;
+    if(f.t==='textarea') return '<textarea name="'+f.k+'" '+(f.req?'required':'')+'>'+esc(val)+'</textarea>';
+    if(f.t==='select'){
+      var opts = '<option value="">— select —</option>' + f.opts.map(function(o){return '<option '+(o===val?'selected':'')+'>'+esc(o)+'</option>';}).join('');
+      return '<select name="'+f.k+'" '+(f.req?'required':'')+'>'+opts+'</select>';
+    }
+    var type = f.t==='money'?'number':(f.t==='number'?'number':(f.t==='date'?'date':(f.t==='email'?'email':(f.t==='tel'?'tel':'text'))));
+    var step = (f.t==='money')?' step="0.01"':'';
+    return '<input type="'+type+'" name="'+f.k+'" value="'+esc(val)+'"'+step+' '+(f.req?'required':'')+'/>';
+  }
+
+  function renderPrefs(container){
+    var p = loadPrefs();
+    container.innerHTML = ''
+      +'<div class="ax-page">'
+      +'<div class="ax-toolbar"><div class="ax-title"><span class="ax-icon">⚙</span><h2>Preferences</h2></div></div>'
+      +'<form class="ax-prefs" id="ax-prefs-form">'
+      +'<div class="ax-field"><label>Company Name</label><input name="company" value="'+esc(p.company)+'"/></div>'
+      +'<div class="ax-field"><label>Base Currency</label><select name="currency">'
+      + ['KES','USD','EUR','GBP','UGX','TZS','ZAR','NGN'].map(function(c){return '<option '+(c===p.currency?'selected':'')+'>'+c+'</option>';}).join('')
+      +'</select></div>'
+      +'<div class="ax-field"><label>Date Format</label><select name="dateFmt">'
+      + ['YYYY-MM-DD','DD/MM/YYYY','MM/DD/YYYY'].map(function(c){return '<option '+(c===p.dateFmt?'selected':'')+'>'+c+'</option>';}).join('')
+      +'</select></div>'
+      +'<div class="ax-modal-actions"><button type="submit" class="ax-btn ax-btn-primary">Save Preferences</button></div>'
+      +'<p style="margin-top:12px;color:#64748b;font-size:13px;">Base currency <b>'+esc(p.currency)+'</b> applies to all monetary values across modules.</p>'
+      +'</form></div>';
+    container.querySelector('#ax-prefs-form').addEventListener('submit', function(e){
+      e.preventDefault();
+      var fd = new FormData(this);
+      savePrefs({company:fd.get('company'),currency:fd.get('currency'),dateFmt:fd.get('dateFmt')});
+      alert('Preferences saved. Reloading to apply.');
+      location.reload();
+    });
+  }
+
+  function openModal(mod, sch, rec, onSave){
+    var wrap = document.createElement('div'); wrap.className='ax-modal-bg';
+    wrap.innerHTML = '<div class="ax-modal"><h3>'+(rec?'Edit ':'New ')+esc(sch.title.replace(/s$/,''))+'</h3>'
+      +'<form>'+sch.fields.map(function(f){return '<div class="ax-field"><label>'+esc(f.l)+(f.req?' *':'')+'</label>'+inputFor(f, rec?rec[f.k]:'')+'</div>';}).join('')
+      +'<div class="ax-modal-actions"><button type="button" class="ax-btn" data-cancel>Cancel</button><button type="submit" class="ax-btn ax-btn-primary">Save</button></div></form></div>';
+    document.body.appendChild(wrap);
+    wrap.querySelector('[data-cancel]').onclick=function(){wrap.remove();};
+    wrap.addEventListener('click',function(e){if(e.target===wrap)wrap.remove();});
+    wrap.querySelector('form').addEventListener('submit',function(e){
+      e.preventDefault();
+      var fd = new FormData(this), obj = rec?Object.assign({},rec):{id:uid()};
+      sch.fields.forEach(function(f){obj[f.k]=fd.get(f.k);});
+      onSave(obj); wrap.remove();
+    });
+  }
+
+  function renderModule(mod, container){
+    if(mod==='preferences'||mod==='settings'){ renderPrefs(container); return; }
+    var sch = S[mod]; if(!sch) return false;
+    var state = { q:'' };
+    function draw(){
+      var recs = loadRecs(mod);
+      var filtered = state.q ? recs.filter(function(r){return sch.fields.some(function(f){return String(r[f.k]||'').toLowerCase().indexOf(state.q.toLowerCase())>=0;});}) : recs;
+      var kpis = sch.kpis(recs);
+      container.innerHTML = ''
+        +'<div class="ax-page">'
+        +'<div class="ax-toolbar">'
+        +'<div class="ax-title"><span class="ax-icon">'+sch.icon+'</span><h2>'+esc(sch.title)+'</h2></div>'
+        +'<div class="ax-actions">'
+        +'<input class="ax-search" type="search" placeholder="Search..." value="'+esc(state.q)+'"/>'
+        +'<button class="ax-btn" data-export>Export CSV</button>'
+        +'<button class="ax-btn ax-btn-primary" data-new>+ New</button>'
+        +'</div></div>'
+        +'<div class="ax-kpis">'+kpis.map(function(k){return '<div class="ax-kpi"><div class="ax-kpi-label">'+esc(k[0])+'</div><div class="ax-kpi-value">'+esc(k[1])+'</div></div>';}).join('')+'</div>'
+        +'<div class="ax-tablewrap"><table class="ax-table">'
+        +'<thead><tr>'+sch.fields.map(function(f){return '<th>'+esc(f.l)+'</th>';}).join('')+'<th style="width:130px;">Actions</th></tr></thead>'
+        +'<tbody>'
+        +(filtered.length?filtered.map(function(r){return '<tr data-id="'+r.id+'">'+sch.fields.map(function(f){return '<td>'+cellVal(f,r[f.k])+'</td>';}).join('')+'<td class="ax-row-actions"><button class="ax-btn" data-edit>Edit</button><button class="ax-btn ax-btn-danger" data-del>Delete</button></td></tr>';}).join('')
+          :'<tr><td colspan="'+(sch.fields.length+1)+'" class="ax-empty">No records yet — click <b>+ New</b> to add one.</td></tr>')
+        +'</tbody></table></div></div>';
+
+      container.querySelector('.ax-search').addEventListener('input',function(e){state.q=e.target.value;draw();});
+      container.querySelector('[data-new]').onclick=function(){openModal(mod,sch,null,function(o){var rs=loadRecs(mod);rs.push(o);saveRecs(mod,rs);draw();});};
+      container.querySelector('[data-export]').onclick=function(){
+        var rs=loadRecs(mod); if(!rs.length){alert('No records to export.');return;}
+        var hdr=sch.fields.map(function(f){return f.l;});
+        var rows=rs.map(function(r){return sch.fields.map(function(f){var v=r[f.k]||'';return '"'+String(v).replace(/"/g,'""')+'"';}).join(',');});
+        var csv=hdr.join(',')+'\n'+rows.join('\n');
+        var blob=new Blob([csv],{type:'text/csv'}); var a=document.createElement('a');
+        a.href=URL.createObjectURL(blob); a.download=mod+'.csv'; a.click();
+      };
+      container.querySelectorAll('[data-edit]').forEach(function(b){b.onclick=function(){
+        var id=b.closest('tr').dataset.id, rs=loadRecs(mod), r=rs.find(function(x){return x.id===id;});
+        openModal(mod,sch,r,function(o){var i=rs.findIndex(function(x){return x.id===id;});rs[i]=o;saveRecs(mod,rs);draw();});
+      };});
+      container.querySelectorAll('[data-del]').forEach(function(b){b.onclick=function(){
+        if(!confirm('Delete this record?'))return;
+        var id=b.closest('tr').dataset.id, rs=loadRecs(mod).filter(function(x){return x.id!==id;});
+        saveRecs(mod,rs); draw();
+      };});
+    }
+    draw();
+    return true;
+  }
+
+  window.AcaciaModules = { render: renderModule, schemas: S };
+
+  /* ---------- Auto-wire: replace placeholder sections ---------- */
+  function wire(){
+    // Replace placeholder-page inside page-section
+    document.querySelectorAll('section.page-section[data-page]').forEach(function(sec){
+      var page = sec.dataset.page;
+      var key = page==='settings' ? 'preferences' : page;
+      if(sec.querySelector('.placeholder-page') || sec.querySelector('.mod-page')){
+        if(S[page] || page==='settings' || page==='preferences'){
+          renderModule(key, sec);
+        }
+      }
+    });
+    // Also patch title on nav for "settings" → Preferences
+    document.querySelectorAll('.nav-link[data-page="settings"]').forEach(function(a){
+      if(/Settings/.test(a.textContent)) a.innerHTML = a.innerHTML.replace('Settings','Preferences');
+    });
+  }
+
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded', function(){ setTimeout(wire, 50); });
+  } else { setTimeout(wire, 50); }
+  // Re-wire on navigation (hash change)
+  window.addEventListener('hashchange', function(){ setTimeout(wire, 30); });
+})();
+
+</script>
 </body>
 
 </html>
