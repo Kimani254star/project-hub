@@ -6,8 +6,341 @@
 <title>Acacia Projects</title>
 <script>(function(){try{var t=localStorage.getItem('acacia_theme'); if(t==='dark') document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css">
 </head>
 <body>
+<div id="homePage">
+
+<header class="hp-header">
+<a href="#top" class="hp-logo" data-scroll>
+<div class="hp-logo-mark"><i class="fa-solid fa-diagram-project"></i></div>
+<div>
+<h2>Acacia Projects</h2>
+<span>Projects &amp; tasks</span>
+</div>
+</a>
+<nav class="hp-nav" id="hpNav" aria-label="Main">
+<ul><li><a href="#top" data-scroll>Home</a></li><li><a href="#about" data-scroll>About</a></li><li><a href="#features" data-scroll>Features</a></li><li><a href="#process" data-scroll>How it works</a></li><li><a href="#pricing" data-scroll>Pricing</a></li><li><a href="#faq" data-scroll>FAQ</a></li><li><a href="#contact" data-scroll>Contact</a></li></ul>
+</nav>
+<div class="hp-actions">
+<button type="button" class="hp-theme" onclick="hpTheme()" aria-label="Toggle dark mode" title="Toggle dark mode"><i class="fa-solid fa-moon hp-moon"></i><i class="fa-solid fa-sun hp-sun"></i></button>
+<button type="button" class="hp-signin" onclick="hpShowLogin('login')">Log in</button>
+<a href="#register" class="hp-getstarted" onclick="hpShowLogin('register');return false;">Create account</a>
+<button type="button" class="hp-burger" id="hpBurger" aria-label="Open menu" aria-expanded="false"><i class="fa-solid fa-bars"></i></button>
+</div>
+</header>
+
+<section class="hp-hero hp-page" data-page="top">
+<div class="hp-slides" aria-hidden="true">
+      <div class="hp-slide active" style="background-image:url('https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=1920&q=80');"></div>
+      <div class="hp-slide" style="background-image:url('https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1920&q=80');"></div>
+      <div class="hp-slide" style="background-image:url('https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=1920&q=80');"></div>
+    </div>
+<div class="hp-left">
+<div class="hp-badge"><i class="fa-solid fa-diagram-project"></i> Plan projects, assign tasks and track time and budgets in one place.</div>
+<h1>Keep every project on track.</h1>
+<p>Acacia Projects helps your team plan projects, break them into tasks and milestones, track time and budgets, and see what needs attention.</p>
+<p>Log in to your account, or create one for your company and start your first project.</p>
+<div class="hp-hero-btns">
+<a href="#register" class="hp-primary" onclick="hpShowLogin('register');return false;">Create your account</a>
+<a href="#login" class="hp-secondary" onclick="hpShowLogin('login');return false;">Log in</a>
+</div>
+</div>
+<div class="hp-right">
+<div class="hp-preview">
+<h2>What's inside</h2>
+<div class="hp-item"><span>Projects</span><strong>Plans &amp; progress</strong></div><div class="hp-item"><span>Tasks</span><strong>Assign &amp; track</strong></div><div class="hp-item"><span>Time</span><strong>Time tracking</strong></div><div class="hp-item"><span>Budgets</span><strong>Budget vs actual</strong></div>
+</div>
+<div class="hp-float hp-float1"><i class="fa-solid fa-list-check"></i> Tasks</div><div class="hp-float hp-float2"><i class="fa-solid fa-flag-checkered"></i> Milestones</div>
+</div>
+</section>
+
+<section class="hp-section hp-page" id="hp-about" data-page="about">
+<div class="hp-two">
+<div class="hp-text">
+<div class="hp-title left">
+<span>About Acacia Projects</span>
+<h2>One place for the plan, the people and the progress.</h2>
+</div>
+<p>Acacia Projects keeps your projects, tasks, milestones and team together, so everyone can see what is planned and what is done.</p><p>Log time against work, keep an eye on budgets, and record issues as they come up, so problems are visible early.</p><p>A dashboard, a calendar and reports show where each project stands.</p>
+<div class="hp-actions-row">
+<a href="#register" class="hp-btn" onclick="hpShowLogin('register');return false;">Create your account <i class="fa-solid fa-arrow-right"></i></a>
+<button type="button" class="hp-btn ghost" onclick="hpShowLogin('login')">Log in</button>
+</div>
+</div>
+<div>
+<div class="hp-stats"><div class="hp-stat"><h4>Planned</h4><p>Projects, tasks and milestones</p></div><div class="hp-stat"><h4>Shared</h4><p>Your team on the same plan</p></div><div class="hp-stat"><h4>Tracked</h4><p>Time entries and budgets</p></div><div class="hp-stat"><h4>Visible</h4><p>Dashboard, calendar and reports</p></div></div>
+<div class="hp-quote">
+<i class="fa-solid fa-quote-left"></i>
+<p>Plan projects, assign tasks and track time and budgets in one place.</p>
+</div>
+</div>
+</div>
+</section>
+
+<section class="hp-section-alt hp-page" id="hp-features" data-page="features">
+<div class="hp-title">
+<span>What you get</span>
+<h2>Everything you need to deliver projects</h2>
+<p>Six areas that keep work organised from plan to finish.</p>
+</div>
+<div class="hp-grid3"><div class="hp-card"><div class="hp-icon"><i class="fa-solid fa-folder-open"></i></div><h3>Projects</h3><p>Create a project, set it up and see its progress at a glance.</p></div><div class="hp-card"><div class="hp-icon"><i class="fa-solid fa-list-check"></i></div><h3>Tasks</h3><p>Break projects into tasks, assign them to people and follow them to completion.</p></div><div class="hp-card"><div class="hp-icon"><i class="fa-solid fa-flag-checkered"></i></div><h3>Milestones &amp; calendar</h3><p>Mark the key dates in a project and see them on a calendar.</p></div><div class="hp-card"><div class="hp-icon"><i class="fa-solid fa-clock"></i></div><h3>Team &amp; time tracking</h3><p>Keep your team list and log the time spent on work.</p></div><div class="hp-card"><div class="hp-icon"><i class="fa-solid fa-wallet"></i></div><h3>Budgets</h3><p>Set budgets for your projects and keep track of spending against them.</p></div><div class="hp-card"><div class="hp-icon"><i class="fa-solid fa-file-lines"></i></div><h3>Documents, issues &amp; reports</h3><p>Keep project documents, log issues, and use reports to see how things are going.</p></div></div>
+</section>
+
+<section class="hp-section hp-page" id="hp-process" data-page="process">
+<div class="hp-title">
+<span>How it works</span>
+<h2>From idea to delivered</h2>
+<p>Three steps, and your project is moving.</p>
+</div>
+<div class="hp-steps"><div class="hp-step"><div class="hp-num">1</div><h3>Create your account</h3><p>Enter your company name, your name, your email address and a password. You start with a blank account, ready for your own projects.</p></div><div class="hp-step"><div class="hp-num">2</div><h3>Plan the work</h3><p>Create a project, add tasks and milestones, and bring in your team.</p></div><div class="hp-step"><div class="hp-num">3</div><h3>Track and deliver</h3><p>Log time, watch budgets, record issues, and use the dashboard and reports to stay on top of progress.</p></div></div>
+</section>
+
+<section class="hp-section-alt hp-page" id="hp-pricing" data-page="pricing">
+    <div class="hp-title">
+      <span>Pricing</span>
+      <h2>Pricing that grows with the business</h2>
+      <p>Start on Free, move up a tier the moment you need it &mdash; every plan shares the same data, so nothing gets re-entered.</p>
+    </div>
+    <div class="hp-billing">
+      <span>Monthly</span>
+      <label class="hp-switch"><input type="checkbox" id="hpBilling" onchange="hpBillingToggle()" aria-label="Bill yearly"><i></i></label>
+      <span>Yearly <em>(2 months free)</em></span>
+    </div>
+    <div class="hp-tiers6">
+      <div class="hp-tier">
+        <h3>Free</h3>
+        <div class="hp-tag">Start your business</div>
+        <div class="hp-price"><span class="hp-amt" data-month="0" data-year="0">KES 0</span><small class="hp-per">/mo</small></div>
+        <ul class="hp-feats">
+          <li>📦 Inventory &amp; Stock Movements</li>
+          <li>👥 Customers, Invoices &amp; Receipts</li>
+          <li>🚚 Suppliers &amp; Supplier Payments</li>
+          <li>🧾 Operational Costs</li>
+          <li>🧮 Manual Journals &amp; Chart of Accounts</li>
+          <li class="hp-extra">🏦 Current Accounts</li>
+          <li class="hp-extra">💵 Employees, Earnings &amp; Attendance</li>
+          <li class="hp-extra">📁 Files &amp; Recycle Bin</li>
+          <li class="hp-extra">⚙️ Org Profile, Preferences, Users</li>
+          <li class="hp-extra">📬 Acacia Mail included free</li>
+          <li class="hp-extra">📏 1 user · 100 products · 100 customers · 25 invoices/mo · 1 warehouse · 100 MB</li>
+        </ul>
+        <button type="button" class="hp-more" onclick="hpMore(this)" data-n="6">Show 6 more features &#9662;</button>
+        <a href="https://acacia-books.vercel.app/" target="_blank" rel="noopener" class="hp-tier-btn">Get Started</a>
+      </div>
+      <div class="hp-tier">
+        <h3>Starter</h3>
+        <div class="hp-tag">Run your daily operations</div>
+        <div class="hp-price"><span class="hp-amt" data-month="1500" data-year="15000">KES 1,500</span><small class="hp-per">/mo</small></div>
+        <ul class="hp-feats">
+          <li><strong>Everything in Free, plus:</strong></li>
+          <li>🧾 Quotes &amp; Delivery</li>
+          <li>📄 Customer &amp; Supplier Statements</li>
+          <li>📥 GRN &amp; Supplier Bills</li>
+          <li>🏬 Warehouses, Shipments &amp; Price Lists</li>
+          <li class="hp-extra">🧮 VAT &amp; Transaction Locking</li>
+          <li class="hp-extra">🔗 Integrations &amp; Settings Templates</li>
+          <li class="hp-extra">🗂️ Subscription Plans tracking</li>
+          <li class="hp-extra">📏 3 users · 1,000 products · 500 customers · 200 invoices/mo · 2 warehouses · 1 GB</li>
+        </ul>
+        <button type="button" class="hp-more" onclick="hpMore(this)" data-n="4">Show 4 more features &#9662;</button>
+        <a href="https://acacia-books.vercel.app/" target="_blank" rel="noopener" class="hp-tier-btn">Choose</a>
+      </div>
+      <div class="hp-tier featured">
+        <div class="hp-pop">Most popular</div>
+        <h3>Pro</h3>
+        <div class="hp-tag">Run your complete business</div>
+        <div class="hp-price"><span class="hp-amt" data-month="3500" data-year="35000">KES 3,500</span><small class="hp-per">/mo</small></div>
+        <ul class="hp-feats">
+          <li><strong>Everything in Starter, plus:</strong></li>
+          <li>🧾 Sales Orders &amp; Purchase Orders</li>
+          <li>↩️ Credit Notes, Debit Notes &amp; Returns</li>
+          <li>📦 Inventory Costing</li>
+          <li>🧮 Recurring Journals &amp; Currency Adjustments</li>
+          <li class="hp-extra">📊 Budgets</li>
+          <li class="hp-extra">💵 Gross Pay &amp; Payslips</li>
+          <li class="hp-extra">🗂️ Projects</li>
+          <li class="hp-extra">📏 10 users · 5,000 products · 2,500 customers · 1,000 invoices/mo · 5 warehouses · 5 GB</li>
+        </ul>
+        <button type="button" class="hp-more" onclick="hpMore(this)" data-n="4">Show 4 more features &#9662;</button>
+        <a href="https://acacia-books.vercel.app/" target="_blank" rel="noopener" class="hp-tier-btn">Choose</a>
+      </div>
+      <div class="hp-tier">
+        <h3>Business</h3>
+        <div class="hp-tag">Automate and scale</div>
+        <div class="hp-price"><span class="hp-amt" data-month="7500" data-year="75000">KES 7,500</span><small class="hp-per">/mo</small></div>
+        <ul class="hp-feats">
+          <li><strong>Everything in Pro, plus:</strong></li>
+          <li>⚡ Bulk &amp; Recurring Invoices</li>
+          <li>⚡ Bulk Billing &amp; Bulk Costing</li>
+          <li>🧮 Tax Payments &amp; Tax Adjustments</li>
+          <li>🏛️ Non-Current Assets, Liabilities &amp; Equity</li>
+          <li class="hp-extra">💵 Statutory Deductions &amp; Payroll Reports</li>
+          <li class="hp-extra">📈 Project Revenue</li>
+          <li class="hp-extra">⚙️ System Configuration &amp; Integrations Hub</li>
+          <li class="hp-extra">🔍 User Activity</li>
+          <li class="hp-extra">📏 25 users · 25,000 products · 10,000 customers · 5,000 invoices/mo · 15 warehouses · 25 GB</li>
+        </ul>
+        <button type="button" class="hp-more" onclick="hpMore(this)" data-n="5">Show 5 more features &#9662;</button>
+        <a href="https://acacia-books.vercel.app/" target="_blank" rel="noopener" class="hp-tier-btn">Choose</a>
+      </div>
+      <div class="hp-tier">
+        <h3>Enterprise</h3>
+        <div class="hp-tag">Control your organization</div>
+        <div class="hp-price hp-custom">Custom</div>
+        <ul class="hp-feats">
+          <li><strong>Everything in Business, plus:</strong></li>
+          <li>👥 Custom user limits</li>
+          <li>💾 Custom storage</li>
+          <li>🔢 Custom transaction limits</li>
+          <li>🛡️ Advanced administration &amp; controls</li>
+          <li class="hp-extra">📈 Advanced reporting</li>
+          <li class="hp-extra">🔗 Enterprise integrations</li>
+          <li class="hp-extra">⚙️ Dedicated configuration</li>
+          <li class="hp-extra">🤝 Custom support arrangements</li>
+        </ul>
+        <button type="button" class="hp-more" onclick="hpMore(this)" data-n="4">Show 4 more features &#9662;</button>
+        <a href="#contact" data-scroll class="hp-tier-btn">Talk to Sales</a>
+      </div>
+      <div class="hp-tier">
+        <h3>All Access</h3>
+        <div class="hp-tag">Everything Acacia</div>
+        <div class="hp-price"><span class="hp-amt" data-month="15000" data-year="150000">KES 15,000</span><small class="hp-per">/mo</small></div>
+        <ul class="hp-feats">
+          <li><strong>Everything in Acacia Books, plus:</strong></li>
+          <li>📬 Acacia Mail</li>
+          <li>🤝 Acacia Books CRM</li>
+          <li>🗂️ Acacia Projects</li>
+          <li>💵 Acacia Payroll</li>
+          <li class="hp-extra">🛒 Acacia Sell</li>
+          <li class="hp-extra">✅ No separate companion-app subscriptions</li>
+          <li class="hp-extra">📏 Enterprise-level or custom limits</li>
+        </ul>
+        <button type="button" class="hp-more" onclick="hpMore(this)" data-n="3">Show 3 more features &#9662;</button>
+        <a href="https://acacia-books.vercel.app/" target="_blank" rel="noopener" class="hp-tier-btn">Choose</a>
+      </div>
+    </div>
+
+    <div class="hp-subhead"><h3>Companion apps</h3><p>Add them to any plan, or get them all with All Access.</p></div>
+    <div class="hp-tablewrap">
+      <table class="hp-table">
+        <thead><tr><th>Companion App</th><th>Add-on price</th><th>All Access</th></tr></thead>
+        <tbody>
+          <tr><td>&#128236; Acacia Mail</td><td>Free</td><td class="hp-yes">&#10003; Included</td></tr>
+          <tr><td>&#129309; Acacia Books CRM</td><td>KES 1,200/month</td><td class="hp-yes">&#10003; Included</td></tr>
+          <tr><td>&#128194; Acacia Projects</td><td>KES 1,500/month</td><td class="hp-yes">&#10003; Included</td></tr>
+          <tr><td>&#128181; Acacia Payroll</td><td>KES 2,000/month</td><td class="hp-yes">&#10003; Included</td></tr>
+          <tr><td>&#128722; Acacia Sell</td><td>KES 2,500/month</td><td class="hp-yes">&#10003; Included</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="hp-subhead"><h3>Usage limits</h3><p>Every plan shares the same data &mdash; only the ceilings change.</p></div>
+    <div class="hp-tablewrap">
+      <table class="hp-table hp-limits">
+        <thead><tr><th>Limit</th><th>Free</th><th>Starter</th><th>Pro</th><th>Business</th><th>Enterprise</th></tr></thead>
+        <tbody>
+          <tr><th>Users</th><td>1</td><td>3</td><td>10</td><td>25</td><td>Custom</td></tr>
+          <tr><th>Warehouses</th><td>1</td><td>2</td><td>5</td><td>15</td><td>Custom</td></tr>
+          <tr><th>Customers</th><td>100</td><td>500</td><td>2,500</td><td>10,000</td><td>Custom</td></tr>
+          <tr><th>Suppliers</th><td>50</td><td>250</td><td>1,000</td><td>5,000</td><td>Custom</td></tr>
+          <tr><th>Products</th><td>100</td><td>1,000</td><td>5,000</td><td>25,000</td><td>Custom</td></tr>
+          <tr><th>Invoices / month</th><td>25</td><td>200</td><td>1,000</td><td>5,000</td><td>Custom</td></tr>
+          <tr><th>Bills / month</th><td>25</td><td>200</td><td>1,000</td><td>5,000</td><td>Custom</td></tr>
+          <tr><th>Projects</th><td>0</td><td>0</td><td>10</td><td>50</td><td>Custom</td></tr>
+          <tr><th>Payroll employees</th><td>5</td><td>25</td><td>100</td><td>500</td><td>Custom</td></tr>
+          <tr><th>File storage</th><td>100 MB</td><td>1 GB</td><td>5 GB</td><td>25 GB</td><td>Custom</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+<section class="hp-section hp-page" id="hp-faq" data-page="faq">
+<div class="hp-title">
+<span>Good questions</span>
+<h2>Frequently asked questions</h2>
+<p>A few quick answers before you sign up.</p>
+</div>
+<div class="hp-faq"><details open><summary>How do I create an account?</summary><p>Choose Create account and enter your company name, your name, your email address and a password of at least 6 characters.</p></details><details><summary>Can I break a project into tasks?</summary><p>Yes. Add tasks to a project, assign them, and follow them until they are done.</p></details><details><summary>Can I track time and budgets?</summary><p>Yes. There is time tracking for your team and a budgets area for your projects.</p></details><details><summary>Is there a calendar?</summary><p>Yes. The calendar shows your project dates and milestones.</p></details><details><summary>Is my data kept per company?</summary><p>Yes. Each company has its own separate data, and everyone in that company sees the same records.</p></details></div>
+</section>
+
+<section class="hp-section-alt hp-page" id="hp-contact" data-page="contact">
+<div class="hp-two">
+<div class="hp-text">
+<div class="hp-title left">
+<span>Get in touch</span>
+<h2>Questions about Acacia Projects?</h2>
+</div>
+<p>Send a message and we'll reply by email.</p>
+<div class="hp-contact-list">
+<div><i class="fa-solid fa-envelope"></i> <a href="mailto:hello@example.com">hello@example.com</a></div>
+</div>
+</div>
+<div class="hp-form-card">
+<form class="hp-form" onsubmit="return hpContact(event)">
+<label>Your name<input id="hpName" required autocomplete="name"></label>
+<label>Email address<input id="hpEmail" type="email" required autocomplete="email"></label>
+<label>Your message<textarea id="hpMsg" required rows="4"></textarea></label>
+<button type="submit" class="hp-btn">Send message <i class="fa-solid fa-paper-plane"></i></button>
+<p id="contactConfirm" class="hidden">Your email app should open with the message ready to send.</p>
+</form>
+</div>
+</div>
+</section>
+
+<section class="hp-cta hp-page" data-page="top">
+<div class="hp-ctabox">
+<div>
+<h2>Ready to get your projects organised?</h2>
+<p>Create your company account, or log in and pick up where you left off.</p>
+<div class="hp-cta-btns">
+<a href="#register" class="hp-cta-primary" onclick="hpShowLogin('register');return false;">Create your account</a>
+<button type="button" class="hp-cta-secondary" onclick="hpShowLogin('login')">Log in</button>
+</div>
+</div>
+<div class="hp-cta-card">
+<h3>What you get</h3>
+<div class="hp-cta-item"><span>Plan</span><strong>Projects / Tasks / Milestones</strong></div><div class="hp-cta-item"><span>Track</span><strong>Time / Budgets / Issues</strong></div><div class="hp-cta-item"><span>Review</span><strong>Dashboard / Reports</strong></div>
+</div>
+</div>
+</section>
+
+<footer class="hp-footer">
+<div class="hp-footgrid">
+<div class="hp-footlogo">
+<h2>Acacia Projects</h2>
+<p>Plan projects, assign tasks and track time and budgets in one place.</p>
+</div>
+<div class="hp-footcol">
+<h3>Explore</h3>
+<ul>
+<li><a href="#about" data-scroll>About</a></li>
+<li><a href="#features" data-scroll>Features</a></li>
+<li><a href="#pricing" data-scroll>Pricing</a></li>
+</ul>
+</div>
+<div class="hp-footcol">
+<h3>Account</h3>
+<ul>
+<li><a href="#faq" data-scroll>FAQ</a></li>
+<li><button type="button" onclick="hpShowLogin('login')">Log in</button></li>
+<li><button type="button" onclick="hpShowLogin('register')">Create account</button></li>
+</ul>
+</div>
+<div class="hp-footcol">
+<h3>Contact</h3>
+<ul>
+<li><a href="mailto:hello@example.com"><i class="fa-solid fa-envelope" style="font-size:12px;margin-right:4px;"></i> hello@example.com</a></li>
+</ul>
+</div>
+</div>
+<div class="hp-bottom">
+<span>&copy; <span id="footerYear"></span> Acacia Projects.</span>
+</div>
+</footer>
+</div>
+<!-- ============ END PUBLIC HOME PAGE ============ -->
+
 <div id="authScreen">
   <div class="auth-wrap">
     <div class="auth-side">
@@ -24,6 +357,7 @@
       <div class="foot">Your data is stored locally in this browser.</div>
     </div>
     <div class="auth-form-panel">
+      <a class="auth-back" onclick="hpShowHome()">&larr; Back to site</a>
       <div class="auth-tabs">
         <div class="auth-tab active" id="tabLoginBtn" onclick="switchAuthTab('login')">Log In</div>
         <div class="auth-tab" id="tabRegisterBtn" onclick="switchAuthTab('register')">Create Account</div>
