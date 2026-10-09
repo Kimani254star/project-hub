@@ -144,7 +144,7 @@ function hpContact(e){
 
   async function register(o) {
     var salt = newSalt(), h = await hash(o.password, salt);
-    var id = await rpc('acx_register_company', { p_company: o.company, p_name: o.name, p_email: low(o.email), p_hash: h, p_salt: salt, p_app: cfg.app });
+    var id = await rpc('acx_register_company', { p_company: o.company, p_name: o.name, p_email: low(o.email), p_hash: h, p_salt: salt, p_app: cfg.app, p_plan: o.plan || '', p_billing: o.billing || 'monthly' });
     var blocked = await gate(id, o.email);
     return { companyId: id, passwordHash: h, passwordSalt: salt, blocked: blocked };
   }
@@ -264,6 +264,16 @@ function hpContact(e){
     document.addEventListener('visibilitychange', function () { if (document.hidden) flush(); });
   }
 
+  /* sign-up plan note: reads #regPlan / #regBilling and shows what the company will pay */
+  w.acxPlanChanged = function () {
+    var s = document.getElementById('regPlan'), b = document.getElementById('regBilling'), n = document.getElementById('regPlanNote');
+    if (!s || !n) return;
+    var o = s.options[s.selectedIndex], p = Number((o && o.getAttribute('data-price')) || 0), y = !!b && b.value === 'yearly';
+    var f = function (x) { return 'KES ' + x.toLocaleString('en-US'); };
+    n.textContent = y ? f(p * 10) + ' for the year (2 months free). Billed after Acacia support approves your account.' : f(p) + ' per month. Billed after Acacia support approves your account.';
+  };
+  setTimeout(function () { try { if (w.acxPlanChanged) w.acxPlanChanged(); } catch (e) {} }, 0);
+
   w.AcaciaCloud = { init: init, signIn: signIn, register: register, addUser: addUser, setRole: setRole, removeUser: removeUser, cacheUser: cacheUser, verifyLocal: verifyLocal, migrate: migrate, start: start, stop: stop, flush: flush, isCloudId: isCloudId, gate: gate, URL: URL_, KEY: KEY_, rpc: rpc, req: req };
 })(window);
 ;
@@ -357,7 +367,7 @@ async function handleRegister(){
   const users = getUsers();
   let user, viaCloud = false;
   try{
-    const c = await AcaciaCloud.register({company, name, email, password});
+    const c = await AcaciaCloud.register({company, name, email, password, plan:(document.getElementById('regPlan')||{}).value||'', billing:(document.getElementById('regBilling')||{}).value||'monthly'});
     if(c.blocked){ showAuthError('registerError','Account created. ' + c.blocked); return; }
     user = {companyId:c.companyId, company, name, email, role:'Administrator', passwordHash:c.passwordHash, passwordSalt:c.passwordSalt};
     viaCloud = true;
@@ -1158,7 +1168,7 @@ function renderTimeTracking(c){
 }
 
 /* ---------- Budgets ---------- */
-function renderBudgets(c){
+function renderBudgetsBase(c){
   setHeader('Finance','Budgets', `<button class="btn primary" onclick="openEntityModal('projects')">+ New Project</button>`);
   const P = state.projects;
   if(P.length===0){
@@ -1527,3 +1537,93 @@ document.getElementById('modalOverlay').addEventListener('click', (e)=>{
 });
 updateThemeToggleIcon();
 checkSessionOnLoad();
+
+
+/* ===== Budget module matching Books: Plan Budget Allocation, Record Expenditure, Budget vs Actual Ledger ===== */
+const BD_MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
+const BD_ACCOUNTS=['Salaries & Wages','Materials','Subcontractors','Equipment','Travel','Marketing','Utilities','Professional Fees','Other'];
+let bdSearch='';
+function bdEnsure(){ state.budgetLines=state.budgetLines||[]; state.budgetActuals=state.budgetActuals||[]; }
+function bdTimeframeOpts(period){
+  if(period==='Monthly') return BD_MONTHS.map((m,i)=>`<option value="${m}">${m}</option>`).join('');
+  if(period==='Quarterly') return ['Q1','Q2','Q3','Q4'].map(q=>`<option>${q}</option>`).join('');
+  return '<option value="Full year">Full year</option>';
+}
+function bdPeriodChange(){ document.getElementById('bdTime').innerHTML=bdTimeframeOpts(document.getElementById('bdPeriod').value); }
+function bdLineLabel(l){ return `${l.account} · ${l.department||'General'} · ${l.timeframe} ${l.year}`; }
+function renderBudgets(c){
+  bdEnsure();
+  const tmp=document.createElement('div'); renderBudgetsBase(tmp);
+  const q=bdSearch.toLowerCase();
+  const rows=state.budgetLines.map(l=>{
+    const actual=state.budgetActuals.filter(a=>a.lineId===l.id).reduce((t,a)=>t+Number(a.amount||0),0), budget=Number(l.amount)||0;
+    const used=budget?actual/budget*100:0; return {...l,actual,budget,variance:budget-actual,used,status:used>100?'Over budget':used>=80?'Near limit':'On track'};
+  }).filter(r=>!q||[r.account,r.department,r.period,r.timeframe,r.year,projectName(r.projectId)].join(' ').toLowerCase().includes(q));
+  const tb=rows.reduce((t,r)=>t+r.budget,0), ta=rows.reduce((t,r)=>t+r.actual,0), yr=new Date().getFullYear();
+  const inp='style="width:100%;padding:8px;border:1px solid var(--border,#ddd);border-radius:8px"';
+  const fld=(l,h)=>`<div><label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">${l}</label>${h}</div>`;
+  c.innerHTML=`
+  <div class="stat-grid">
+    <div class="stat-card"><div class="num">${fmtMoney(tb)}</div><div class="lbl">Planned (budget lines)</div></div>
+    <div class="stat-card ${ta>tb?'danger':''}"><div class="num">${fmtMoney(ta)}</div><div class="lbl">Actual Incurred</div></div>
+    <div class="stat-card gold"><div class="num">${fmtMoney(tb-ta)}</div><div class="lbl">Variance (Budget − Actual)</div></div>
+  </div>
+  <div class="two-col">
+    <div class="panel"><div class="panel-head"><h3>1. Plan Budget Allocation</h3></div><div class="panel-body">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
+        ${fld('Account Category',`<input id="bdAcc" list="bdAccList" ${inp}><datalist id="bdAccList">${BD_ACCOUNTS.map(a=>`<option>${a}</option>`).join('')}</datalist>`)}
+        ${fld('Department / Business Unit',`<input id="bdDept" ${inp}>`)}
+        ${fld('Project (optional)',`<select id="bdProj" ${inp}><option value="">— none —</option>${state.projects.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select>`)}
+        ${fld('Period Cycle',`<select id="bdPeriod" onchange="bdPeriodChange()" ${inp}><option>Monthly</option><option>Quarterly</option><option>Annual</option></select>`)}
+        ${fld('Timeframe',`<select id="bdTime" ${inp}>${bdTimeframeOpts('Monthly')}</select>`)}
+        ${fld('Fiscal Year',`<input id="bdYear" type="number" value="${yr}" ${inp}>`)}
+        ${fld('Target Allocation',`<input id="bdAmt" type="number" min="0" ${inp}>`)}
+      </div><div style="margin-top:12px"><button class="btn primary" onclick="bdAddLine()">Add Budget Line</button></div></div></div>
+    <div class="panel"><div class="panel-head"><h3>2. Record Expenditure</h3></div><div class="panel-body">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">
+        ${fld('Budget Line',`<select id="bdActLine" ${inp}><option value="">Select budget line</option>${state.budgetLines.map(l=>`<option value="${l.id}">${esc(bdLineLabel(l))}</option>`).join('')}</select>`)}
+        ${fld('Actual Amount Incurred',`<input id="bdActAmt" type="number" min="0" ${inp}>`)}
+        ${fld('Date',`<input id="bdActDate" type="date" value="${todayISO()}" ${inp}>`)}
+        ${fld('Note',`<input id="bdActNote" ${inp}>`)}
+      </div><div style="margin-top:12px"><button class="btn primary" onclick="bdAddActual()">Record Expenditure</button></div>
+      <div style="font-size:12px;opacity:.7;margin-top:8px">If the line is linked to a project, the amount is added to that project's actual cost.</div></div></div>
+  </div>
+  <div class="panel"><div class="panel-head"><h3>Budget vs. Actual Ledger</h3>
+    <div style="display:flex;gap:8px"><input placeholder="Search account, dept, period..." value="${esc(bdSearch)}" oninput="bdSearch=this.value;render();var i=document.querySelector('[placeholder^=&quot;Search account&quot;]');i.focus();i.setSelectionRange(i.value.length,i.value.length)" style="padding:6px 10px;border:1px solid var(--border,#ddd);border-radius:8px">
+    <button class="btn small" onclick="bdExport()">Export CSV</button><button class="btn small" onclick="bdReset()">Reset</button></div></div>
+    <div class="panel-body" style="overflow-x:auto"><table class="data-table" style="width:100%"><thead><tr><th>Account</th><th>Department</th><th>Project</th><th>Period</th><th>Timeframe</th><th>Year</th><th>Budget</th><th>Actual</th><th>Variance</th><th>% Used</th><th>Status</th><th></th></tr></thead><tbody>
+    ${rows.map(r=>`<tr><td>${esc(r.account)}</td><td>${esc(r.department||'—')}</td><td>${r.projectId?esc(projectName(r.projectId)):'—'}</td><td>${r.period}</td><td>${r.timeframe}</td><td>${r.year}</td><td>${fmtMoney(r.budget)}</td><td>${fmtMoney(r.actual)}</td>
+      <td style="color:${r.variance<0?'var(--danger)':'var(--success)'}">${fmtMoney(r.variance)}</td><td>${r.used.toFixed(0)}%</td><td>${r.status}</td><td><button class="btn small" onclick="bdDelLine('${r.id}')">Delete</button></td></tr>`).join('')||'<tr><td colspan="12" style="text-align:center;opacity:.6;padding:20px">No budget lines yet. Add one above.</td></tr>'}
+    </tbody></table></div></div>
+  <h3 style="margin:24px 0 8px">Budget by project</h3>${tmp.innerHTML}`;
+  setHeader('Finance','Budgets','');
+}
+function bdAddLine(){
+  bdEnsure(); const g=id=>document.getElementById(id).value;
+  const amount=parseFloat(g('bdAmt')); if(!g('bdAcc').trim()||isNaN(amount)) return toast('Enter an account category and target amount.');
+  state.budgetLines.push({id:uid('bl'),account:g('bdAcc').trim(),department:g('bdDept').trim(),projectId:g('bdProj')||'',period:g('bdPeriod'),timeframe:g('bdTime'),year:g('bdYear'),amount});
+  saveState(); toast('Budget line added.'); render();
+}
+function bdAddActual(){
+  bdEnsure(); const g=id=>document.getElementById(id).value, l=state.budgetLines.find(x=>x.id===g('bdActLine')), amount=parseFloat(g('bdActAmt'));
+  if(!l||isNaN(amount)) return toast('Select a budget line and enter an amount.');
+  state.budgetActuals.push({id:uid('ba'),lineId:l.id,amount,date:g('bdActDate'),note:g('bdActNote').trim()});
+  const p=state.projects.find(x=>x.id===l.projectId); if(p) p.actualCost=(Number(p.actualCost)||0)+amount;
+  saveState(); toast('Expenditure recorded.'); render();
+}
+function bdDelLine(id){
+  if(!confirm('Delete this budget line and its recorded expenditure?')) return;
+  const l=state.budgetLines.find(x=>x.id===id), sum=state.budgetActuals.filter(a=>a.lineId===id).reduce((t,a)=>t+Number(a.amount||0),0);
+  const p=l&&state.projects.find(x=>x.id===l.projectId); if(p) p.actualCost=Math.max(0,(Number(p.actualCost)||0)-sum);
+  state.budgetLines=state.budgetLines.filter(x=>x.id!==id); state.budgetActuals=state.budgetActuals.filter(a=>a.lineId!==id); saveState(); render();
+}
+function bdReset(){
+  if(!confirm('Clear ALL budget lines and recorded expenditure? Project actual costs will be reduced accordingly.')) return;
+  state.budgetLines.forEach(l=>{ const sum=state.budgetActuals.filter(a=>a.lineId===l.id).reduce((t,a)=>t+Number(a.amount||0),0); const p=state.projects.find(x=>x.id===l.projectId); if(p) p.actualCost=Math.max(0,(Number(p.actualCost)||0)-sum); });
+  state.budgetLines=[]; state.budgetActuals=[]; saveState(); render();
+}
+function bdExport(){
+  bdEnsure(); const q=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
+  const lines=[['Account','Department','Project','Period','Timeframe','Year','Budget','Actual','Variance'].join(',')].concat(state.budgetLines.map(l=>{const a=state.budgetActuals.filter(x=>x.lineId===l.id).reduce((t,x)=>t+Number(x.amount||0),0);return [l.account,l.department,projectName(l.projectId),l.period,l.timeframe,l.year,l.amount,a,l.amount-a].map(q).join(',')}));
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/csv'})); a.download='budget-vs-actual.csv'; a.click();
+}
