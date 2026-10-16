@@ -118,14 +118,27 @@ function hpContact(e){
   async function gate(cid, login) {
     try { if ((await rpc('acx_account_state', { p_company: low(cid), p_login: low(login) })) === 'deleted') return 'This account was removed by Acacia support.'; } catch (e) {}
     try {
-      var acc = await rpc('acx_app_access', { p_company: String(cid || ''), p_login: low(login), p_app: String((cfg && cfg.app) || '').toLowerCase() });
-      if (acc === 'not_paid') return 'Your company has not paid for this app yet. Ask your admin to add it to your plan in Acacia Books (Settings > Subscription), then sign in again.';
-      if (acc === 'expired') return 'Your company subscription has ended. Renew it in Acacia Books to open this app again.';
-      if (acc === 'no_access') return 'Your admin has not given you access to this app. Ask them to tick it under User Management > App access in Acacia Books.';
-    } catch (e) {}
-    try {
       var r = await req('acacia_company_status?select=status&company_id=eq.' + enc(cid));
       if (r.ok) { var j = await r.json(); var s = j[0] && j[0].status; if (s === 'pending') return 'Your company is waiting for approval by Acacia support. You will be able to sign in as soon as it is approved.'; if (s && s !== 'active') return 'Your company account is "' + s + '". Please contact Acacia support.'; }
+    } catch (e) {}
+    /* paid add-on apps: the company's subscription must include this app (fails open if the status row can't be read) */
+    try {
+      var ADDON = { crm: 'Acacia CRM', projects: 'Acacia Projects', payroll: 'Acacia Payroll', sell: 'Acacia Sell' };
+      var appKey = low(cfg && cfg.app), appName = ADDON[appKey];
+      if (appName) {
+        var r2 = await req('acacia_company_status?select=*&company_id=eq.' + enc(cid));
+        if (r2.ok) {
+          var row = (await r2.json())[0];
+          if (row) {
+            var plan = low(row.plan), apps = String(row.apps || '').split(',').map(function (x) { return low(x); }).filter(Boolean);
+            var lapsed = row.paid_until && !isNaN(new Date(row.paid_until)) && new Date(row.paid_until) < new Date();
+            if (lapsed || (row.downgraded_at && plan === 'free' && !row.paid_until)) return 'Your Acacia subscription has expired, so ' + appName + ' is locked. Renew it in Books (Subscription) to continue.';
+            var legacy = row.all_apps === null || row.all_apps === undefined;      /* companies created before apps were recorded stay open */
+            var all = row.all_apps === true || low(row.all_apps) === 'true' || plan === 'all access' || apps.indexOf('*') > -1 || apps.indexOf('all') > -1;
+            if (!legacy && !all && apps.indexOf(appKey) < 0) return appName + " is not part of your company's subscription. Ask your company admin to add it under Subscription in Books, or upgrade to All Access.";
+          }
+        }
+      }
     } catch (e) {}
     return null;
   }
@@ -671,6 +684,17 @@ function toast(msg){
    Entity schemas
 ========================================================= */
 function projectOptions(){ return state.projects.map(p=>({value:p.id,label:p.name||'(unnamed project)'})); }
+
+/* ---------- Plan / Budget pickers, fed from Acacia Books by acacia-bridge.js (window.AcaciaBooksData) ---------- */
+function booksData(){ return window.AcaciaBooksData || {plans:[], budgets:[]}; }
+function budgetTotal(b){ return ((b&&b.months)||[]).reduce((s,m)=>s+(Number(m&&m.amount)||0),0); }
+function budgetKey(b){ return [b.account||'', b.department||'', b.period||''].join('|'); }
+function planOptions(){ return (booksData().plans||[]).filter(p=>p&&p.title).map(p=>({value:p.title, label:p.title+(p.endDate?'  (to '+p.endDate+')':'')})); }
+function budgetOptions(){ return (booksData().budgets||[]).filter(b=>b&&(b.account||b.department)).map(b=>({value:budgetKey(b), label:(b.account||'—')+(b.department?' — '+b.department:'')+(b.period?' ('+b.period+')':'')+' · '+budgetTotal(b).toLocaleString()})); }
+function matchBudgetForPlan(p){
+  const t = String(p&&p.linkedBudget||'').trim().toLowerCase(); if(!t) return null;
+  return (booksData().budgets||[]).find(b=>{ const a=String(b.account||'').toLowerCase(), d=String(b.department||'').toLowerCase(); return t===a || t===d || t===(a+' - '+d) || t===(a+' — '+d) || (a && t.indexOf(a)===0); }) || null;
+}
 function teamOptions(){ return state.team.map(t=>({value:t.id,label:t.name||'(unnamed)'})); }
 function milestoneOptionsFor(projectId){ return state.milestones.filter(m=>m.projectId===projectId).map(m=>({value:m.id,label:m.name})); }
 
@@ -681,6 +705,8 @@ const ENTITIES = {
   projects: {
     label:'Project', labelPlural:'Projects', icon:'◧',
     fields: [
+      {key:'planTitle', label:'Plan (from Plans module)', type:'select', options:planOptions},
+      {key:'budgetRef', label:'Budget (from Budgets module)', type:'select', options:budgetOptions},
       {key:'name', label:'Project Name', type:'text', required:true},
       {key:'code', label:'Project Code', type:'text', placeholder:'auto-generated if left blank'},
       {key:'client', label:'Client', type:'text'},
@@ -1712,6 +1738,27 @@ document.getElementById('modalOverlay').addEventListener('click', (e)=>{
   if(e.target.id==='modalOverlay') closeModal();
 });
 updateThemeToggleIcon();
+/* picking a Plan or Budget fills the project form; everything stays editable */
+document.addEventListener('change', function(e){
+  const t = e.target; if(!t || !t.getAttribute || !modalCtx || modalCtx.entityKey!=='projects') return;
+  const key = t.getAttribute('data-key'); if(key!=='planTitle' && key!=='budgetRef') return;
+  const q = k => document.querySelector('#modalBody [data-key="'+k+'"]');
+  const has = v => v!==undefined && v!==null && v!=='';
+  const setIfEmpty = (k,v)=>{ const el=q(k); if(el && has(v) && !String(el.value||'').trim()) el.value=v; };
+  const setVal = (k,v)=>{ const el=q(k); if(el && has(v)) el.value=v; };
+  if(key==='planTitle'){
+    const p = (booksData().plans||[]).find(x=>x.title===t.value); if(!p) return;
+    const nm = q('name'); if(nm && (!String(nm.value||'').trim() || nm.value===modalCtx._planPicked)) nm.value = p.title;
+    modalCtx._planPicked = p.title;
+    setIfEmpty('description', p.description); setVal('startDate', p.startDate); setVal('endDate', p.endDate);
+    const pr = q('priority'); if(pr && p.priority){ const ok = Array.from(pr.options).find(o=>String(o.value).toLowerCase()===String(p.priority).toLowerCase()); if(ok) pr.value = ok.value; }
+    const b = matchBudgetForPlan(p), br = q('budgetRef');
+    if(b && br && !br.value){ br.value = budgetKey(b); setVal('budget', budgetTotal(b)); }
+  } else {
+    const b = (booksData().budgets||[]).find(x=>budgetKey(x)===t.value); if(b) setVal('budget', budgetTotal(b));
+  }
+});
+
 checkSessionOnLoad();
 
 
