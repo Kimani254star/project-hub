@@ -872,7 +872,50 @@ function openEntityModal(entityKey, recordId, presetFields){
   const body = document.getElementById('modalBody');
   body.innerHTML = schema.fields.map(f=>renderField(f, modalCtx.record)).join('');
   document.getElementById('modalSaveBtn').onclick = saveEntityModal;
+  document.getElementById('modalSaveBtn').style.display = '';
   document.getElementById('modalOverlay').classList.add('open');
+}
+
+/* Preview: read-only view of a record (Save button hidden) */
+function previewRecord(entityKey, id){
+  const schema = ENTITIES[entityKey];
+  const rec = state[entityKey].find(r=>r.id===id);
+  if(!rec) return;
+  modalCtx = null;
+  document.getElementById('modalTitle').textContent = 'Preview ' + schema.label;
+  const show = (f)=>{
+    let v = rec[f.key];
+    if(v===undefined || v==='' || v===null) return '—';
+    if(f.key==='projectId'){ const pr = state.projects.find(x=>x.id===v); return pr ? pr.name : v; }
+    if(f.type==='select' && typeof f.options!=='function' && Array.isArray(f.options)){
+      const o = f.options.find(o=> (typeof o==='string'? o : o.value)===v);
+      if(o && typeof o!=='string') return o.label;
+    }
+    return v;
+  };
+  document.getElementById('modalBody').innerHTML =
+    '<div class="field-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px 18px">' +
+    schema.fields.map(f=>`<div style="${f.type==='textarea'?'grid-column:1/-1;':''}"><div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#6b7280;margin-bottom:2px">${esc(f.label)}</div><div style="white-space:pre-wrap">${esc(show(f))}</div></div>`).join('') +
+    '</div>';
+  document.getElementById('modalSaveBtn').style.display = 'none';
+  document.getElementById('modalOverlay').classList.add('open');
+}
+
+/* Clone: copy a record with a new id; name/title gets "(Copy)", project code is regenerated */
+function cloneRecord(entityKey, id){
+  const schema = ENTITIES[entityKey];
+  const rec = state[entityKey].find(r=>r.id===id);
+  if(!rec) return;
+  const copy = JSON.parse(JSON.stringify(rec));
+  copy.id = uid(entityKey);
+  copy.createdAt = todayISO();
+  ['name','title'].forEach(k=>{ if(typeof copy[k]==='string' && copy[k]) copy[k] = copy[k] + ' (Copy)'; });
+  if(entityKey==='projects') copy.code = '';
+  if(schema.beforeSave) schema.beforeSave(copy);
+  state[entityKey].push(copy);
+  saveState();
+  toast(schema.label + ' cloned.');
+  render();
 }
 
 function renderField(f, record){
@@ -927,6 +970,7 @@ function saveEntityModal(){
 
 function closeModal(){
   document.getElementById('modalOverlay').classList.remove('open');
+  const sb = document.getElementById('modalSaveBtn'); if(sb) sb.style.display = '';
   modalCtx = null;
 }
 
@@ -981,10 +1025,7 @@ function renderEntityTable(entityKey, records, opts){
       ${records.map(rec=>`
         <tr onclick="handleRowClick(event,'${entityKey}','${rec.id}')">
           ${cols.map(c=>`<td>${cellValue(entityKey,c,rec)}</td>`).join('')}
-          <td class="row-actions">
-            <button class="icon-btn" onclick="event.stopPropagation();openEntityModal('${entityKey}','${rec.id}')" title="Edit">✎</button>
-            <button class="icon-btn" onclick="event.stopPropagation();deleteRecord('${entityKey}','${rec.id}')" title="Delete">🗑</button>
-          </td>
+          <td class="row-actions acx-cell">${ACX_ACT({view:`previewRecord('${entityKey}','${rec.id}')`, edit:`openEntityModal('${entityKey}','${rec.id}')`, clone:`cloneRecord('${entityKey}','${rec.id}')`, del:`deleteRecord('${entityKey}','${rec.id}')`})}</td>
         </tr>`).join('')}
     </tbody>
   </table>`;
