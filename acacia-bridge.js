@@ -531,7 +531,7 @@
     return any;
   }
 
-  function readKeys() { var k = ['customers', 'invoices', 'suppliers', 'employees', 'projects', 'appInbox']; if (APP === 'expenses') k.push('chartOfAccounts', 'banks'); if (APP === 'projects') k.push('plans', 'budgets', 'actuals'); if (APP === 'sell') k.push('inventory', 'banks', 'chartOfAccounts'); return k; }
+  function readKeys() { var k = ['customers', 'invoices', 'suppliers', 'employees', 'projects', 'appInbox']; if (APP === 'expenses') k.push('chartOfAccounts', 'banks'); if (APP === 'projects') k.push('plans', 'budgets', 'actuals', 'progressUpdates', 'planOwnerships', 'planRevisions'); if (APP === 'sell') k.push('inventory', 'banks', 'chartOfAccounts'); return k; }
 
   async function sync(force) {
     if (busy) return; var u = user(); APP = detect();
@@ -557,8 +557,9 @@
       ST.counts = APP === 'projects' ? 'Books has ' + nB.p + ' projects for this company ID.' : APP === 'payroll' ? 'Books has ' + nB.e + ' employees for this company ID.' : 'Books has ' + nB.c + ' customers, ' + nB.i + ' invoices, ' + nB.s + ' suppliers for this company ID.';
       if (APP === 'projects') { try { var cu = rows.customers && JSON.parse(rows.customers.value); if (typeof cu === 'string') cu = JSON.parse(cu); clientNames = (cu || []).map(function (x) { return x && x.name; }).filter(Boolean).sort(); applyClientList(); } catch (e) {} }
       if (APP === 'projects') {
-        var bd = { plans: [], budgets: [] };
+        var bd = { plans: [], budgets: [], progress: [], owners: [], revisions: [] };
         ['plans', 'budgets'].forEach(function (k) { try { var v = rows[k] && JSON.parse(rows[k].value); if (typeof v === 'string') v = JSON.parse(v); if (Array.isArray(v)) bd[k] = v; } catch (e) {} });
+        [['progressUpdates', 'progress'], ['planOwnerships', 'owners'], ['planRevisions', 'revisions']].forEach(function (m) { try { var v = rows[m[0]] && JSON.parse(rows[m[0]].value); if (typeof v === 'string') v = JSON.parse(v); if (Array.isArray(v)) bd[m[1]] = v; } catch (e) {} });
         w.AcaciaBooksData = bd; ST.extra = bd.plans.length + ' plans and ' + bd.budgets.length + ' budgets from Books are available in the project form.';
       }
       var inbox = []; try { if (rows.appInbox) { var q = JSON.parse(rows.appInbox.value); if (typeof q === 'string') q = JSON.parse(q); if (Array.isArray(q)) inbox = q; } } catch (e) {}

@@ -1063,6 +1063,28 @@ function render(){
 }
 
 /* ---------- Dashboard ---------- */
+
+/* Plans report on the dashboard: mirrors Books > Reports > Advanced Plans Report (all plans combined, then each plan with % done and % remaining) */
+function plansReportHtml(P){
+  const bd=booksData(), PL=bd.plans||[], PU=bd.progress||[], OW=bd.owners||[], RV=bd.revisions||[];
+  const head='<div class="panel"><div class="panel-head"><h3>Plans (from Books)</h3></div><div class="panel-body">';
+  if(!PL.length) return head+'<div class="empty-state" style="padding:20px;"><div>No plans from Books yet. They appear here once the Books company has plans.</div></div></div></div>';
+  const newest=(arr,t)=>arr.filter(x=>(x.title||x.planTitle)===t).sort((a,b)=>new Date(b.date||0)-new Date(a.date||0))[0];
+  const rows=PL.map(pl=>{
+    const u=newest(PU,pl.title), r=newest(RV,pl.title), own=OW.filter(o=>o.planTitle===pl.title);
+    let prog=Number(u?u.progress:pl.progress)||0; prog=Math.max(0,Math.min(100,prog));
+    return {pl,prog,rem:100-prog,owner:own.map(o=>o.owner).filter(Boolean).join(', '),team:own.reduce((a,o)=>a.concat(o.team||[]),[]).join(', '),rev:r};
+  });
+  const n=rows.length, cnt=s=>PL.filter(p=>p.status===s).length;
+  const avg=Math.round(rows.reduce((t,r)=>t+r.prog,0)/n), card=(v,l,c)=>'<div class="stat-card '+(c||'')+'"><div class="num">'+v+'</div><div class="lbl">'+l+'</div></div>';
+  const bar=(p,c)=>'<div style="display:flex;align-items:center;gap:6px;min-width:110px"><div class="progress-track" style="flex:1"><div class="progress-fill" style="width:'+p+'%;'+(c?'background:'+c:'')+'"></div></div><span class="pct">'+p+'%</span></div>';
+  return head+
+   '<div class="stat-grid" style="margin-bottom:14px">'+card(n,'Total Plans')+card(cnt('Completed'),'Completed','gold')+card(cnt('In Progress'),'In Progress')+card(cnt('On Hold'),'On Hold','warn')+card(avg+'%','Combined Progress','gold')+card((100-avg)+'%','Combined Remaining to Complete',(100-avg)?'warn':'')+'</div>'+
+   '<div style="overflow-x:auto"><table class="data-table" style="width:100%"><thead><tr><th>Period</th><th>Plan</th><th>Department</th><th>Goal</th><th>Priority</th><th>Status</th><th>Linked budget</th><th>Done</th><th>Remaining</th><th>Owner</th><th>Team</th><th>Latest revision</th><th>Projects</th></tr></thead><tbody>'+
+   rows.map(r=>{ const p=r.pl, lp=P.filter(x=>x.planTitle===p.title).map(x=>esc(x.name)).join(', ')||'—';
+     return '<tr><td>'+esc((p.startDate||'')+(p.endDate?' → '+p.endDate:''))+'</td><td>'+esc(p.title)+'</td><td>'+esc(p.department||'—')+'</td><td>'+esc(p.goalType||'—')+'</td><td>'+esc(p.priority||'—')+'</td><td>'+esc(p.status||'—')+'</td><td>'+esc(p.linkedBudget||'—')+'</td><td>'+bar(r.prog)+'</td><td>'+bar(r.rem,'#b45309')+'</td><td>'+esc(r.owner||'—')+'</td><td>'+esc(r.team||'—')+'</td><td>'+(r.rev?esc((r.rev.action||'')+(r.rev.comment?' — '+r.rev.comment:'')+(r.rev.date?' ('+r.rev.date+')':'')):'—')+'</td><td>'+lp+'</td></tr>'; }).join('')+
+   '</tbody></table></div></div></div>';
+}
 function renderDashboard(c){
   setHeader('Overview','Dashboard', `<button class="btn primary" onclick="openEntityModal('projects')">+ New Project</button>`);
   const P = state.projects, T = state.tasks;
@@ -1148,13 +1170,7 @@ function renderDashboard(c){
       </div>
     </div>
 
-    <div class="panel">
-      <div class="panel-head"><h3>Plans (from Books)</h3></div>
-      <div class="panel-body">
-        ${(()=>{ const PL=(booksData().plans||[]); if(!PL.length) return `<div class="empty-state" style="padding:20px;"><div>No plans from Books yet. They appear here once the Books company has plans.</div></div>`;
-          return `<div style="overflow-x:auto"><table class="data-table" style="width:100%"><thead><tr><th>Plan</th><th>Department</th><th>Status</th><th>Progress</th><th>Linked budget</th><th>Projects</th></tr></thead><tbody>${PL.map(pl=>{ const lp=P.filter(x=>x.planTitle===pl.title).map(x=>esc(x.name)).join(', ')||'—'; return `<tr><td>${esc(pl.title)}</td><td>${esc(pl.department||'—')}</td><td>${esc(pl.status||'—')}</td><td>${Number(pl.progress)||0}%</td><td>${esc(pl.linkedBudget||'—')}</td><td>${lp}</td></tr>`; }).join('')}</tbody></table></div>`; })()}
-      </div>
-    </div>
+    ${plansReportHtml(P)}
 
     <div class="panel">
       <div class="panel-head"><h3>Project Progress</h3></div>
