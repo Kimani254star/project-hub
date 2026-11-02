@@ -184,6 +184,7 @@
         add: function (p) { db().projects.push(p); },
         inUse: function (p) { var d = db(); return ['tasks', 'milestones', 'timeEntries', 'issues', 'documents'].some(function (k) { return (d[k] || []).some(function (x) { return x.projectId === p.id; }); }); }
       },
+      afterRead: function (rows) { return budgetSync(rows); },
       save: function () { saveState(); },
       render: function () { render(); }
     },
@@ -278,6 +279,76 @@
     }
   };
 
+
+  /* ---------- Budgets: Books Budgets module -> Projects Budget module (same company) ----------
+   * Books keeps budgets [{account, department, period, months:[{month, amount, year, period}]}] and actuals (same shape).
+   * Every month/quarter/year entry becomes a Books-sourced budget line (bk:1) in this app, Books actuals become Books-sourced
+   * expenditure, and any project whose \"Budget\" box points at a Books budget gets its budget and Books-recorded cost kept up to date.
+   * Lines you add here yourself are never touched. */
+  var BD_MON = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+  function bdTf(e) { var m = String(e && e.month != null ? e.month : '').trim(); return /^\d{4}$/.test(m) ? 'Full year' : m; }
+  function bdYr(e) { var m = String(e && e.month != null ? e.month : '').trim(); return String((e && e.year) || (/^\d{4}$/.test(m) ? m : '') || new Date().getFullYear()); }
+  function bdPer(e) { var t = bdTf(e); return (e && e.period) || (t === 'Full year' ? 'Annual' : (/^Q[1-4]$/i.test(t) ? 'Quarterly' : 'Monthly')); }
+  function bdRange(e) {
+    var t = low(bdTf(e)), y = Number(bdYr(e)), i = BD_MON.indexOf(t), q = /^q([1-4])$/.exec(t);
+    if (t === 'full year') return { y: y, s: 1, e: 12 };
+    if (q) return { y: y, s: (q[1] - 1) * 3 + 1, e: q[1] * 3 };
+    if (i > -1) return { y: y, s: i + 1, e: i + 1 };
+    return null;
+  }
+  function bdNorm(a, dp) { return low(a) + '|' + low(dp || 'General'); }
+  function budgetSync(rows) {
+    var d = db(); if (!d || !rows) return false;
+    var arr = function (k) { try { var v = rows[k] && JSON.parse(rows[k].value); if (typeof v === 'string') v = JSON.parse(v); return Array.isArray(v) ? v : null; } catch (e) { return null; } };
+    var bud = arr('budgets'), act = arr('actuals') || [];
+    if (!bud) return false;                                     /* Books has no budgets row yet: remove nothing */
+    var lines = [], byId = {}, acts = [], changed = false;
+    function addLine(id, o) { if (!byId[id]) { o.id = id; o.bk = 1; byId[id] = o; lines.push(o); } return byId[id]; }
+    var linkOf = {}; (d.projects || []).forEach(function (p) { if (p.budgetRef && !linkOf[p.budgetRef]) linkOf[p.budgetRef] = p.id; });
+    bud.forEach(function (b) {
+      if (!b || !b.account) return;
+      var key = [b.account || '', b.department || '', b.period || ''].join('|');
+      (b.months || []).forEach(function (e) {
+        var tf = bdTf(e), yr = bdYr(e);
+        addLine('bk-' + hx(bdNorm(b.account, b.department) + '|' + low(tf) + '|' + yr).slice(0, 10), { account: String(b.account), department: b.department && b.department !== 'General' ? String(b.department) : '', projectId: linkOf[key] || '', period: bdPer(e), timeframe: tf, year: yr, amount: Number(e.amount) || 0, _r: bdRange(e), _k: bdNorm(b.account, b.department) });
+      });
+    });
+    var perLine = {};
+    act.forEach(function (a) {
+      if (!a || !a.account) return;
+      var nk = bdNorm(a.account, a.department);
+      (a.months || []).forEach(function (e) {
+        var r = bdRange(e), best = null;
+        if (r) lines.forEach(function (l) { if (l._k !== nk || !l._r || l._r.y !== r.y || l._r.s > r.s || l._r.e < r.e) return; if (!best || (l._r.e - l._r.s) < (best._r.e - best._r.s)) best = l; });
+        if (!best) best = addLine('bk-u' + hx(nk + '|' + low(bdTf(e)) + '|' + bdYr(e)).slice(0, 9), { account: String(a.account), department: a.department && a.department !== 'General' ? String(a.department) : '', projectId: '', period: bdPer(e), timeframe: bdTf(e), year: bdYr(e), amount: 0, _r: r, _k: nk });
+        perLine[best.id] = (perLine[best.id] || 0) + 1;
+        var mi = r ? String(r.y) + '-' + ('0' + r.s).slice(-2) + '-01' : today();
+        acts.push({ id: 'bka-' + hx(best.id + '|' + perLine[best.id]).slice(0, 10), bk: 1, lineId: best.id, amount: Number(e.amount) || 0, date: mi, note: 'From Books' });
+      });
+    });
+    var keep = function (o) { var c = {}; Object.keys(o).forEach(function (k) { if (k.charAt(0) !== '_') c[k] = o[k]; }); return c; };
+    var newL = lines.map(keep);
+    d.budgetLines = d.budgetLines || []; d.budgetActuals = d.budgetActuals || [];
+    var oldL = d.budgetLines.filter(function (l) { return l && l.bk; }), oldA = d.budgetActuals.filter(function (x) { return x && x.bk; });
+    if (h([oldL, oldA]) !== h([newL, acts])) {
+      var ids = {}; d.budgetLines.filter(function (l) { return !(l && l.bk); }).forEach(function (l) { ids[l.id] = 1; }); newL.forEach(function (l) { ids[l.id] = 1; });
+      d.budgetLines = d.budgetLines.filter(function (l) { return !(l && l.bk); }).concat(newL);
+      d.budgetActuals = d.budgetActuals.filter(function (x) { return x && !x.bk && ids[x.lineId]; }).concat(acts);   /* expenditure typed here stays, unless its Books line no longer exists */
+      changed = true;
+    }
+    /* projects that point at a Books budget follow its total and the cost Books has recorded against it */
+    (d.projects || []).forEach(function (p) {
+      if (!p.budgetRef) return;
+      var b = bud.find(function (x) { return [x.account || '', x.department || '', x.period || ''].join('|') === p.budgetRef; }); if (!b) return;
+      var tot = (b.months || []).reduce(function (s, m) { return s + (Number(m && m.amount) || 0); }, 0), nk = bdNorm(b.account, b.department), sp = 0;
+      act.forEach(function (a) { if (a && bdNorm(a.account, a.department) === nk) (a.months || []).forEach(function (m) { sp += Number(m && m.amount) || 0; }); });
+      if (Number(p.budget) !== tot) { p.budget = tot; changed = true; }
+      var prev = Number(p._bkActual) || 0;
+      if (prev !== sp) { p.actualCost = Math.max(0, (Number(p.actualCost) || 0) - prev + sp); p._bkActual = sp; changed = true; }
+    });
+    ST.extra = (ST.extra ? ST.extra + '<br>' : '') + newL.length + ' budget lines and ' + acts.length + ' expenditure records are mirrored from the Books Budgets module.';
+    return changed;
+  }
 
   /* ---------- visible status (so a failure is never silent) ---------- */
   var ST = { state: 'wait', msg: 'Waiting for login…', at: null, company: '', counts: '', err: '' }, pill = null, pop = null;
@@ -460,7 +531,7 @@
     return any;
   }
 
-  function readKeys() { var k = ['customers', 'invoices', 'suppliers', 'employees', 'projects', 'appInbox']; if (APP === 'expenses') k.push('chartOfAccounts', 'banks'); if (APP === 'projects') k.push('plans', 'budgets'); if (APP === 'sell') k.push('inventory', 'banks', 'chartOfAccounts'); return k; }
+  function readKeys() { var k = ['customers', 'invoices', 'suppliers', 'employees', 'projects', 'appInbox']; if (APP === 'expenses') k.push('chartOfAccounts', 'banks'); if (APP === 'projects') k.push('plans', 'budgets', 'actuals'); if (APP === 'sell') k.push('inventory', 'banks', 'chartOfAccounts'); return k; }
 
   async function sync(force) {
     if (busy) return; var u = user(); APP = detect();
@@ -471,6 +542,9 @@
     try {
       var rows = {}, res = await w.AcaciaCloud.rpc('acx_books_read', { p_company: u.companyId, p_keys: readKeys() });
       (res || []).forEach(function (r) { rows[r.key] = r; });
+      if (APP === 'projects') {
+        try { ((await w.AcaciaCloud.rpc('acx_budget_read', { p_company: u.companyId })) || []).forEach(function (r) { if (r && r.key) rows[r.key] = r; }); } catch (e) { /* acx_budget_read not installed yet: the generic read above is used */ }
+      }
       if (APP === 'projects' && rows.projects) {
         try { var pj = JSON.parse(rows.projects.value); if (typeof pj === 'string') pj = JSON.parse(pj);
           if (Array.isArray(pj) && pj.some(function (x) { return x && x.id == null; })) {

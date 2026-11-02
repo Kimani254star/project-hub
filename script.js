@@ -1856,8 +1856,8 @@ function renderBudgets(c){
     <div style="display:flex;gap:8px"><input placeholder="Search account, dept, period..." value="${esc(bdSearch)}" oninput="bdSearch=this.value;render();var i=document.querySelector('[placeholder^=&quot;Search account&quot;]');i.focus();i.setSelectionRange(i.value.length,i.value.length)" style="padding:6px 10px;border:1px solid var(--border,#ddd);border-radius:8px">
     <button class="btn small" onclick="bdExport()">Export CSV</button><button class="btn small" onclick="bdReset()">Reset</button></div></div>
     <div class="panel-body" style="overflow-x:auto"><table class="data-table" style="width:100%"><thead><tr><th>Account</th><th>Department</th><th>Project</th><th>Period</th><th>Timeframe</th><th>Year</th><th>Budget</th><th>Actual</th><th>Variance</th><th>% Used</th><th>Status</th><th></th></tr></thead><tbody>
-    ${rows.map(r=>`<tr><td>${esc(r.account)}</td><td>${esc(r.department||'—')}</td><td>${r.projectId?esc(projectName(r.projectId)):'—'}</td><td>${r.period}</td><td>${r.timeframe}</td><td>${r.year}</td><td>${fmtMoney(r.budget)}</td><td>${fmtMoney(r.actual)}</td>
-      <td style="color:${r.variance<0?'var(--danger)':'var(--success)'}">${fmtMoney(r.variance)}</td><td>${r.used.toFixed(0)}%</td><td>${r.status}</td><td><button class="btn small" onclick="bdDelLine('${r.id}')">Delete</button></td></tr>`).join('')||'<tr><td colspan="12" style="text-align:center;opacity:.6;padding:20px">No budget lines yet. Add one above.</td></tr>'}
+    ${rows.map(r=>`<tr><td>${esc(r.account)}${r.bk?' <span title="Synced from the Books Budgets module" style="font-size:10px;padding:1px 6px;border-radius:99px;background:#0f766e;color:#fff">Books</span>':''}</td><td>${esc(r.department||'—')}</td><td>${r.projectId?esc(projectName(r.projectId)):'—'}</td><td>${r.period}</td><td>${r.timeframe}</td><td>${r.year}</td><td>${fmtMoney(r.budget)}</td><td>${fmtMoney(r.actual)}</td>
+      <td style="color:${r.variance<0?'var(--danger)':'var(--success)'}">${fmtMoney(r.variance)}</td><td>${r.used.toFixed(0)}%</td><td>${r.status}</td><td>${r.bk?'':`<button class="btn small" onclick="bdDelLine('${r.id}')">Delete</button>`}</td></tr>`).join('')||'<tr><td colspan="12" style="text-align:center;opacity:.6;padding:20px">No budget lines yet. Add one above.</td></tr>'}
     </tbody></table></div></div>
   <h3 style="margin:24px 0 8px">Budget by project</h3>${tmp.innerHTML}`;
   setHeader('Finance','Budgets','');
@@ -1876,15 +1876,16 @@ function bdAddActual(){
   saveState(); toast('Expenditure recorded.'); render();
 }
 function bdDelLine(id){
+  { const bl=(state.budgetLines||[]).find(x=>x.id===id); if(bl&&bl.bk) return toast('This line comes from the Books Budgets module. Change or remove it in Books.'); }
   if(!confirm('Delete this budget line and its recorded expenditure?')) return;
   const l=state.budgetLines.find(x=>x.id===id), sum=state.budgetActuals.filter(a=>a.lineId===id).reduce((t,a)=>t+Number(a.amount||0),0);
   const p=l&&state.projects.find(x=>x.id===l.projectId); if(p) p.actualCost=Math.max(0,(Number(p.actualCost)||0)-sum);
   state.budgetLines=state.budgetLines.filter(x=>x.id!==id); state.budgetActuals=state.budgetActuals.filter(a=>a.lineId!==id); saveState(); render();
 }
 function bdReset(){
-  if(!confirm('Clear ALL budget lines and recorded expenditure? Project actual costs will be reduced accordingly.')) return;
-  state.budgetLines.forEach(l=>{ const sum=state.budgetActuals.filter(a=>a.lineId===l.id).reduce((t,a)=>t+Number(a.amount||0),0); const p=state.projects.find(x=>x.id===l.projectId); if(p) p.actualCost=Math.max(0,(Number(p.actualCost)||0)-sum); });
-  state.budgetLines=[]; state.budgetActuals=[]; saveState(); render();
+  if(!confirm('Clear all budget lines and expenditure entered here? (Lines synced from Books stay.) Project actual costs will be reduced accordingly.')) return;
+  state.budgetLines.filter(l=>!l.bk).forEach(l=>{ const sum=state.budgetActuals.filter(a=>a.lineId===l.id).reduce((t,a)=>t+Number(a.amount||0),0); const p=state.projects.find(x=>x.id===l.projectId); if(p) p.actualCost=Math.max(0,(Number(p.actualCost)||0)-sum); });
+  state.budgetLines=state.budgetLines.filter(l=>l.bk); state.budgetActuals=state.budgetActuals.filter(a=>a.bk); saveState(); render();
 }
 function bdExport(){
   bdEnsure(); const q=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
