@@ -1149,6 +1149,14 @@ function renderDashboard(c){
     </div>
 
     <div class="panel">
+      <div class="panel-head"><h3>Plans (from Books)</h3></div>
+      <div class="panel-body">
+        ${(()=>{ const PL=(booksData().plans||[]); if(!PL.length) return `<div class="empty-state" style="padding:20px;"><div>No plans from Books yet. They appear here once the Books company has plans.</div></div>`;
+          return `<div style="overflow-x:auto"><table class="data-table" style="width:100%"><thead><tr><th>Plan</th><th>Department</th><th>Status</th><th>Progress</th><th>Linked budget</th><th>Projects</th></tr></thead><tbody>${PL.map(pl=>{ const lp=P.filter(x=>x.planTitle===pl.title).map(x=>esc(x.name)).join(', ')||'—'; return `<tr><td>${esc(pl.title)}</td><td>${esc(pl.department||'—')}</td><td>${esc(pl.status||'—')}</td><td>${Number(pl.progress)||0}%</td><td>${esc(pl.linkedBudget||'—')}</td><td>${lp}</td></tr>`; }).join('')}</tbody></table></div>`; })()}
+      </div>
+    </div>
+
+    <div class="panel">
       <div class="panel-head"><h3>Project Progress</h3></div>
       <div class="panel-body">
         ${P.length===0? `<div class="empty-state"><div class="title">No projects to chart</div><div>Progress bars will appear here once projects are created.</div></div>` :
