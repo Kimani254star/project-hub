@@ -1835,6 +1835,7 @@ function renderBudgets(c){
   <div class="two-col">
     <div class="panel"><div class="panel-head"><h3>1. Plan Budget Allocation</h3></div><div class="panel-body">
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
+        ${fld('Plan (from Plans module)',`<select id="bdPlan" onchange="bdPlanPick()" ${inp}><option value="">— none —</option>${(booksData().plans||[]).map(p=>`<option value="${esc(p.title)}">${esc(p.title)}</option>`).join('')}</select>`)}
         ${fld('Account Category',`<input id="bdAcc" list="bdAccList" ${inp}><datalist id="bdAccList">${BD_ACCOUNTS.map(a=>`<option>${a}</option>`).join('')}</datalist>`)}
         ${fld('Department / Business Unit',`<input id="bdDept" ${inp}>`)}
         ${fld('Project (optional)',`<select id="bdProj" ${inp}><option value="">— none —</option>${state.projects.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select>`)}
@@ -1862,10 +1863,19 @@ function renderBudgets(c){
   <h3 style="margin:24px 0 8px">Budget by project</h3>${tmp.innerHTML}`;
   setHeader('Finance','Budgets','');
 }
+function bdPlanPick(){
+  const t=document.getElementById('bdPlan').value, set=(id,v)=>{const el=document.getElementById(id); if(el&&v!==undefined&&v!==null&&v!=='') el.value=v;};
+  const pl=(booksData().plans||[]).find(x=>x.title===t); if(!pl) return;
+  const b=matchBudgetForPlan(pl);
+  set('bdAcc', b?b.account:pl.linkedBudget); set('bdDept', (b&&b.department&&b.department!=='General')?b.department:pl.department);
+  const pj=state.projects.find(x=>x.planTitle===pl.title); if(pj) set('bdProj',pj.id);
+  const y=String(pl.startDate||'').slice(0,4); if(/^\d{4}$/.test(y)) set('bdYear',y);
+  if(b){ const tot=budgetTotal(b); if(tot) set('bdAmt',tot); }
+}
 function bdAddLine(){
   bdEnsure(); const g=id=>document.getElementById(id).value;
   const amount=parseFloat(g('bdAmt')); if(!g('bdAcc').trim()||isNaN(amount)) return toast('Enter an account category and target amount.');
-  state.budgetLines.push({id:uid('bl'),account:g('bdAcc').trim(),department:g('bdDept').trim(),projectId:g('bdProj')||'',period:g('bdPeriod'),timeframe:g('bdTime'),year:g('bdYear'),amount});
+  state.budgetLines.push({id:uid('bl'),account:g('bdAcc').trim(),department:g('bdDept').trim(),projectId:g('bdProj')||'',planTitle:g('bdPlan')||'',period:g('bdPeriod'),timeframe:g('bdTime'),year:g('bdYear'),amount});
   saveState(); toast('Budget line added.'); render();
 }
 function bdAddActual(){
