@@ -667,10 +667,7 @@ html[data-theme="dark"] #homePage .hp-mi{background:rgba(255,255,255,.06);}
 
 /* ===== Acacia Budget: grouped menu + status badges ===== */
 .sidebar nav .nav-group{margin-bottom:4px;}
-.sidebar nav .nav-gh{display:flex;justify-content:space-between;align-items:center;padding:9px 12px;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:rgba(255,255,255,.6);cursor:pointer;border-radius:4px;user-select:none;}
-.sidebar nav .nav-gh:hover{color:#fff;background:rgba(255,255,255,.06);}
-.sidebar nav .nav-group.has-active>.nav-gh{color:#fff;}
-.sidebar nav .nav-gh .chev{font-style:normal;font-size:11px;opacity:.7;}
+.sidebar nav .nav-gh{display:flex;align-items:center;padding:12px 12px 4px;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:rgba(255,255,255,.6);user-select:none;}
 .sidebar nav .nav-gb .nav-item{padding-left:22px;}
 .badge.status-Approved,.badge.status-Invoiced,.badge.status-On.track{background:var(--success-soft);color:var(--success);}
 .badge.status-Rejected,.badge.status-Over.budget{background:var(--danger-soft);color:var(--danger);}

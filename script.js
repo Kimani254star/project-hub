@@ -908,19 +908,14 @@ let navOpen = {};
 let route = {section:'budgetOverview', params:{}};
 
 function renderNav(){
-  const nav = document.getElementById('nav'), g0 = groupOf(route.section);
-  nav.innerHTML = NAV_GROUPS.map(g=>{
-    const open = navOpen[g.key]===undefined ? g.key===g0 : navOpen[g.key];
-    return `<div class="nav-group ${open?'open':''} ${g.key===g0?'has-active':''}">
-      <div class="nav-gh" onclick="toggleNavGroup('${g.key}')"><span>${esc(g.label)}</span><i class="chev">${open?'▾':'▸'}</i></div>
-      <div class="nav-gb" style="${open?'':'display:none'}">${g.items.map(([k,l])=>`<div class="nav-item ${route.section===k?'active':''}" onclick="goTo('${k}')"><span class="dot"></span>${esc(l)}</div>`).join('')}</div>
-    </div>`;
-  }).join('') + `<div class="nav-group"><div class="nav-item ${route.section==='settings'?'active':''}" onclick="goTo('settings')"><span class="dot"></span>Settings</div></div>`;
+  const nav = document.getElementById('nav');
+  nav.innerHTML = NAV_GROUPS.map((g,n)=>`<div class="nav-group">
+      <div class="nav-gh"><span>${n+1}. ${esc(g.label)}</span></div>
+      <div class="nav-gb">${g.items.map(([k,l])=>`<div class="nav-item ${route.section===k?'active':''}" onclick="goTo('${k}')"><span class="dot"></span>${esc(l)}</div>`).join('')}</div>
+    </div>`).join('') + `<div class="nav-group"><div class="nav-item ${route.section==='settings'?'active':''}" onclick="goTo('settings')"><span class="dot"></span>Settings</div></div>`;
 }
-function toggleNavGroup(k){ const cur = navOpen[k]===undefined ? k===groupOf(route.section) : navOpen[k]; navOpen[k] = !cur; renderNav(); }
 function goTo(section, params){
   route = {section, params: params||{}};
-  const g = groupOf(section); if(g) navOpen[g] = true;
   renderNav(); render();
   const m = document.querySelector('.main'); if(m) m.scrollTop = 0;
 }
@@ -1292,15 +1287,18 @@ function renderSettings(c){
   const list = (title,key) => `<div class="settings-block"><h4>${title}</h4><div class="pill-list">${s[key].map((it,i)=>`<span class="pill">${esc(it)}<button onclick="removeSettingItem('${key}',${i})">✕</button></span>`).join('')||'<span style="opacity:.6;font-size:13px">None yet</span>'}</div><div style="margin-top:10px;display:flex;gap:8px"><input id="input_${key}" placeholder="Add new..." style="padding:7px 10px;border:1px solid var(--line);border-radius:3px"><button class="btn small" onclick="addSettingItem('${key}')">+ Add</button></div></div>`;
   c.innerHTML = `<div class="panel"><div class="panel-head"><h3>Company Information</h3></div><div class="panel-body">
     <div class="field-row"><div class="field"><label>Company Name</label><input id="c_name" value="${esc(s.company.name)}"></div><div class="field"><label>Currency</label><input id="c_currency" value="${esc(s.company.currency)}"></div></div>
+    <div class="field"><label>Address</label><input id="c_address" value="${esc(s.company.address)}"></div>
     <div class="field-row"><div class="field"><label>Phone</label><input id="c_phone" value="${esc(s.company.phone)}"></div><div class="field"><label>Email</label><input id="c_email" value="${esc(s.company.email)}"></div></div>
     <div class="field-row"><div class="field"><label>Budget number prefix</label><input id="c_prefix" value="${esc(s.budgetNumberingPrefix)}"></div><div class="field"><label>Next budget number</label><input id="c_next" type="number" value="${s.nextBudgetNumber}"></div></div>
     <button class="btn primary" onclick="saveCompanyInfo()">Save</button></div></div>
   <div class="panel"><div class="panel-head"><h3>Lists</h3></div><div class="panel-body">${list('Departments','departments')}${list('Projects','projectNames')}${list('Accounts','accounts')}</div></div>
+  <div class="panel"><div class="panel-head"><h3>Appearance</h3></div><div class="panel-body"><div data-acacia-appearance></div></div></div>
   <div class="panel"><div class="panel-head"><h3>Data</h3></div><div class="panel-body" style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" onclick="exportData()">Export backup</button><label class="btn" style="cursor:pointer">Import backup<input type="file" accept=".json" style="display:none" onchange="importData(event)"></label><button class="btn" style="color:var(--danger)" onclick="resetAllData()">Erase all data</button></div></div>`;
+  if(window.AcaciaAppearance) window.AcaciaAppearance.mount();
 }
 function saveCompanyInfo(){
   const g = id => document.getElementById(id).value, s = state.settings;
-  s.company.name = g('c_name').trim(); s.company.currency = g('c_currency').trim()||'KES'; s.company.phone = g('c_phone').trim(); s.company.email = g('c_email').trim();
+  s.company.name = g('c_name').trim(); s.company.currency = g('c_currency').trim()||'KES'; s.company.address = g('c_address').trim(); s.company.phone = g('c_phone').trim(); s.company.email = g('c_email').trim();
   s.budgetNumberingPrefix = g('c_prefix'); s.nextBudgetNumber = Math.max(1, parseInt(g('c_next'))||1);
   saveState(); toast('Settings saved.');
 }
