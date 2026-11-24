@@ -1,9 +1,30 @@
-/* Acacia Budget service worker: caches the app shell so it installs and opens offline. */
-const CACHE='acacia-budget-v1';
-const SHELL=['./','index.html','style.css','script.js','acacia-dash.css','acacia-dash.js','acacia-theme.js','acacia-appearance.js','acacia-actions.js','acacia-signout.js','acacia-help.js','acacia-sidebar.js','acacia-brand.js','icon-192.png','icon-512.png','manifest.webmanifest'];
-self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>Promise.all(SHELL.map(u=>c.add(u).catch(()=>{})))).then(()=>self.skipWaiting()));});
-self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==CACHE).map(x=>caches.delete(x)))).then(()=>self.clients.claim()));});
-self.addEventListener('fetch',e=>{
-  const r=e.request; if(r.method!=='GET'||new URL(r.url).origin!==location.origin) return;   /* Supabase and other sites go straight to the network */
-  e.respondWith(fetch(r).then(res=>{const copy=res.clone();caches.open(CACHE).then(c=>c.put(r,copy));return res;}).catch(()=>caches.match(r).then(m=>m||caches.match('index.html'))));
+/* Acacia Budget - works offline: the app files and the libraries it loads from CDNs are saved on first visit.
+   Supabase (your data) is never cached here. Pages are fetched fresh when online and served from the saved copy when offline. */
+var V = 'acx-budget-v2';
+var LOCAL = ["./", "acacia-actions.js", "acacia-appearance.js", "acacia-brand.js", "acacia-dash.css", "acacia-dash.js", "acacia-help.js", "acacia-sidebar.js", "acacia-signout.js", "acacia-support.js", "acacia-theme.js", "acacia-whatsnew.js", "apple-touch-icon.png", "favicon-32.png", "icon-192.png", "icon-512.png", "icon-maskable-512.png", "index.html", "manifest.webmanifest", "script.js", "style.css"];
+var CDN = ["https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css", "https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&display=swap"];
+var CDN_HOSTS = ['cdn.jsdelivr.net', 'cdnjs.cloudflare.com', 'cdn.tailwindcss.com', 'cdn.quilljs.com', 'fonts.googleapis.com', 'fonts.gstatic.com', 'unpkg.com'];
+function save(c, u) { return fetch(u).then(function (r) { if (r && (r.ok || r.type === 'opaque')) return c.put(u, r); }).catch(function () {}); }
+self.addEventListener('install', function (e) {
+  e.waitUntil(caches.open(V).then(function (c) { return Promise.all(LOCAL.concat(CDN).map(function (u) { return save(c, u); })); }).then(function () { return self.skipWaiting(); }));
+});
+self.addEventListener('activate', function (e) {
+  e.waitUntil(caches.keys().then(function (k) { return Promise.all(k.filter(function (x) { return x.indexOf('acx-budget-') === 0 && x !== V; }).map(function (x) { return caches.delete(x); })); }).then(function () { return self.clients.claim(); }));
+});
+self.addEventListener('fetch', function (e) {
+  var r = e.request; if (r.method !== 'GET') return;
+  var u = new URL(r.url);
+  if (u.origin === self.location.origin) {
+    e.respondWith(fetch(r).then(function (res) {
+      if (res && res.ok && res.type === 'basic') { var cp = res.clone(); caches.open(V).then(function (c) { c.put(r, cp); }); }
+      return res;
+    }).catch(function () { return caches.match(r).then(function (m) { return m || caches.match('index.html'); }); }));
+    return;
+  }
+  if (CDN_HOSTS.indexOf(u.hostname) >= 0) {   /* libraries and fonts: saved copy first, refreshed in the background */
+    e.respondWith(caches.match(r).then(function (m) {
+      var net = fetch(r).then(function (res) { if (res && (res.ok || res.type === 'opaque')) { var cp = res.clone(); caches.open(V).then(function (c) { c.put(r, cp); }); } return res; });
+      return m || net;
+    }));
+  }
 });
