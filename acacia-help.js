@@ -1,151 +1,118 @@
-/* Acacia Support popup — same help options as Acacia Books: Navigate, AI Assistant, Chat, Email.
+/* Acacia Support popup (Plans) — same help options as Acacia Books: Navigate, AI Assistant, Chat, Email.
    Self-contained: injects its own styles and button, reads this app's own menu (NAV / goTo) to jump to screens. */
 (function () {
   'use strict';
   if (window.__acxHelp) return; window.__acxHelp = true;
   var CFG = {
- "app": "Projects",
- "title": "Acacia Projects",
+ "app": "Plans",
+ "title": "Acacia Plans",
  "email": "developeracaciabooks@gmail.com,adminacaciabooks@gmail.com",
  "screens": [
   {
-   "id": "dashboard",
-   "module": "Dashboard",
-   "desc": "overview of your projects, tasks and deadlines.",
-   "tip": "The landing view shows the key numbers for your projects.",
+   "id": "plans",
+   "module": "Plan Hub",
+   "desc": "create plans and see all your plans in one place.",
+   "tip": "Under Plans Hub, click Plan Hub.",
    "keywords": [
-    "home",
-    "overview",
-    "summary"
+    "plan",
+    "new plan",
+    "add plan",
+    "create plan",
+    "all plans",
+    "goal",
+    "target"
    ]
   },
   {
-   "id": "projects",
-   "module": "Projects",
-   "desc": "create and manage projects.",
-   "tip": "Open it to see all projects and add a new one.",
+   "id": "ownership",
+   "module": "Ownership",
+   "desc": "set who owns each plan and which team works on it.",
+   "tip": "Under Plan Progress, click Ownership.",
    "keywords": [
-    "project",
-    "new project",
-    "add project"
-   ]
-  },
-  {
-   "id": "tasks",
-   "module": "Tasks",
-   "desc": "track tasks and who is doing them.",
-   "tip": "Open it to see tasks and add or update them.",
-   "keywords": [
-    "task",
-    "to do",
-    "todo",
+    "owner",
+    "ownership",
+    "team",
+    "responsible",
     "assign"
    ]
   },
   {
-   "id": "milestones",
-   "module": "Milestones",
-   "desc": "key dates and goals inside a project.",
-   "tip": "Open it to see and add milestones.",
+   "id": "progress",
+   "module": "Track Progress",
+   "desc": "update how far each plan has got.",
+   "tip": "Under Plan Progress, click Track Progress.",
    "keywords": [
-    "milestone",
-    "deadline",
-    "goal"
+    "progress",
+    "status",
+    "track",
+    "delayed",
+    "completed"
    ]
   },
   {
-   "id": "calendar",
-   "module": "Calendar",
-   "desc": "see work and deadlines by date.",
-   "tip": "Open it to view items on the calendar.",
+   "id": "expenses",
+   "module": "Track Expenses",
+   "desc": "operational costs linked to your plans (read-only, comes from Books).",
+   "tip": "Under Plan Progress, click Track Expenses.",
    "keywords": [
-    "calendar",
-    "schedule",
-    "date"
-   ]
-  },
-  {
-   "id": "team",
-   "module": "Team",
-   "desc": "the people working on your projects.",
-   "tip": "Open it to see and manage team members.",
-   "keywords": [
-    "team",
-    "member",
-    "staff",
-    "people",
-    "role"
-   ]
-  },
-  {
-   "id": "timeEntries",
-   "module": "Time Tracking",
-   "desc": "record hours worked on projects and tasks.",
-   "tip": "Open it to log time and see hours.",
-   "keywords": [
-    "time",
-    "hours",
-    "timesheet",
-    "time entry",
-    "log time"
-   ]
-  },
-  {
-   "id": "budgets",
-   "module": "Budgets",
-   "desc": "project budgets against what was spent.",
-   "tip": "Open it to see budgets.",
-   "keywords": [
-    "budget",
+    "expense",
     "cost",
-    "spend"
+    "spend",
+    "operational cost",
+    "budget"
    ]
   },
   {
-   "id": "documents",
-   "module": "Documents",
-   "desc": "files and documents linked to projects.",
-   "tip": "Open it to see and add documents.",
+   "id": "revisions",
+   "module": "Review & Revise",
+   "desc": "record reviews and changes made to a plan.",
+   "tip": "Under Plan Progress, click Review & Revise.",
    "keywords": [
-    "document",
-    "file",
-    "upload",
-    "attachment"
+    "review",
+    "revise",
+    "revision",
+    "change plan",
+    "update plan"
    ]
   },
   {
-   "id": "issues",
-   "module": "Issues",
-   "desc": "problems and risks raised on projects.",
-   "tip": "Open it to log and follow issues.",
+   "id": "actions",
+   "module": "Action Plan",
+   "desc": "action items needed to deliver a plan.",
+   "tip": "Under Plan Progress, click Action Plan.",
    "keywords": [
-    "issue",
-    "bug",
-    "risk",
-    "problem"
+    "action",
+    "action item",
+    "task",
+    "to do",
+    "todo"
    ]
   },
   {
-   "id": "reports",
-   "module": "Reports",
-   "desc": "summaries of project work.",
-   "tip": "Open it to view reports.",
+   "id": "revenue",
+   "module": "Plan Revenue",
+   "desc": "revenue earned against each plan.",
+   "tip": "Under Revenue, click Plan Revenue.",
    "keywords": [
-    "report",
-    "export",
-    "summary"
+    "revenue",
+    "income",
+    "sales",
+    "earned",
+    "target amount"
    ]
   },
   {
-   "id": "settings",
-   "module": "Settings",
-   "desc": "company details, statuses and numbering.",
-   "tip": "Open it to change your settings.",
+   "id": "appearance",
+   "module": "Appearance",
+   "desc": "colours, theme and look of the app.",
+   "tip": "Click Appearance under Settings at the bottom of the sidebar.",
    "keywords": [
-    "setting",
-    "configure",
-    "company",
-    "preferences"
+    "appearance",
+    "theme",
+    "dark mode",
+    "colour",
+    "color",
+    "look"
    ]
   }
  ],
@@ -167,7 +134,7 @@
     "teammate",
     "team member"
    ],
-   "answer": "☁️ <b>Sign in & data sync</b>\n\nSign in with the same <b>email and company name</b> on any computer or phone and you get the same company data.\n1. Changes are saved to the cloud a few seconds after you make them.\n2. The app also checks for your teammates' changes about every 30 seconds.\n3. If two people edit at once, both sets of changes are kept (records are merged, not replaced).\n4. If you are offline, your work is kept in this browser and syncs when you are back online."
+   "answer": "☁️ <b>Sign in & data sync</b>\n\nSign in with the same <b>email and company name</b> you use in Acacia Books and you get the same company data.\n1. Changes are saved to the cloud a few seconds after you make them.\n2. The app also checks for your teammates' changes regularly.\n3. If you are offline, your work is kept in this browser and syncs when you are back online."
   }
  ]
 };
@@ -187,9 +154,10 @@
   function esc(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 
   /* ---------- app hooks ---------- */
-  function loggedIn() { try { return typeof CURRENT_USER !== 'undefined' && !!CURRENT_USER; } catch (e) { return false; } }
+  function loggedIn() { try { return typeof currentUser === 'function' && !!currentUser(); } catch (e) { return false; } }
   function currentId() {
     try {
+      if (typeof active !== 'undefined') return active;
       if (CFG.app === 'Projects') return route.section;
       if (CFG.app === 'CRM') return currentView;
       if (CFG.app === 'Sell') return currentPage;
@@ -206,7 +174,7 @@
   function go(id) {
     try {
       if (CFG.app === 'Expenses') { var n = document.querySelector('.nav-item[data-view="' + id + '"]'); if (n) n.click(); }
-      else if (typeof goTo === 'function') goTo(id);
+      else if (typeof window.go === 'function') window.go(id);
     } catch (e) { console.error(e); }
     $('acxhPop').classList.remove('open');
   }
@@ -268,6 +236,7 @@
     document.body.appendChild(fab); document.body.appendChild(pop);
 
     fab.addEventListener('click', toggle);
+    window.toggleSupportPopup = function () { if (loggedIn()) toggle(); };
     pop.addEventListener('click', function (e) {
       var t = e.target.closest('[data-a],[data-m],[data-go]'); if (!t) return;
       if (t.dataset.go) return go(t.dataset.go);
@@ -373,7 +342,7 @@
       var A = window.AcaciaCloud;
       window.ACX_APP = CFG.app;
       if (A && A.URL && !window.__SUPA_URL__) { window.__SUPA_URL__ = A.URL; window.__SUPA_KEY__ = A.KEY; }
-      window.acxSession = window.acxSession || function () { try { return CURRENT_USER && CURRENT_USER.companyId ? { companyId: String(CURRENT_USER.companyId), obj: CURRENT_USER } : null; } catch (e) { return null; } };
+      window.acxSession = window.acxSession || function () { try { var u = currentUser(); return u && u.companyId ? { companyId: String(u.companyId), obj: u } : null; } catch (e) { return null; } };
     } catch (e) {}
     var s = document.createElement('script'); s.src = 'acacia-support.js';
     s.onload = function () { if (window.acxOpenSupportPanel) start(); else alert('Support chat loaded but did not start correctly. Please refresh and try again, or use Email.'); };

@@ -61,9 +61,22 @@ function hpContact(e){
   e.preventDefault();
   var n=document.getElementById('hpName').value.trim(), m=document.getElementById('hpEmail').value.trim(), t=document.getElementById('hpMsg').value.trim();
   var body='From: '+n+' <'+m+'>\n\n'+t;
-  window.location.href='mailto:hello@example.com?subject='+encodeURIComponent('Acacia Projects enquiry')+'&body='+encodeURIComponent(body);
+  window.location.href='mailto:hello@example.com?subject='+encodeURIComponent('Acacia Plans enquiry')+'&body='+encodeURIComponent(body);
   document.getElementById('contactConfirm').classList.remove('hidden');
   return false;
+}
+
+/* Plans uses Tailwind screens, so its home/auth switching is different */
+function hpShowHome(){
+  authScreen.classList.add('hidden');
+  document.getElementById('homePage').style.display='block';
+  window.hpShowPage&&window.hpShowPage('top');
+}
+function hpHideHome(){ document.getElementById('homePage').style.display='none'; }
+function hpShowLogin(tab){
+  hpHideHome();
+  authScreen.classList.remove('hidden');
+  switchAuthTab(tab==='register'?'signup':'signin');
 }
 
 ;
@@ -116,7 +129,7 @@ function hpContact(e){
 
   /* deleted / suspended companies are blocked (fails open if the cloud can't be reached) */
   async function gate(cid, login) {
-    try { if (/^(deleted|deactivated)$/.test(String(await rpc('acx_account_state', { p_company: low(cid), p_login: low(login) })))) return 'This company account has been deactivated or removed. Contact Acacia support.'; } catch (e) {}
+    try { if ((await rpc('acx_account_state', { p_company: low(cid), p_login: low(login) })) === 'deleted') return 'This account was removed by Acacia support.'; } catch (e) {}
     try {
       var r = await req('acacia_company_status?select=status&company_id=eq.' + enc(cid));
       if (r.ok) { var j = await r.json(); var s = j[0] && j[0].status; if (s === 'pending') return 'Your company is waiting for approval by Acacia support. You will be able to sign in as soon as it is approved.'; if (s && s !== 'active') return 'Your company account is "' + s + '". Please contact Acacia support.'; }
@@ -145,29 +158,6 @@ function hpContact(e){
 
   async function signIn(email, pass, company) {
     email = low(email);
-    /* passwords are checked inside Postgres (acx_login); the browser never sees a hash */
-    var rows;
-    try { rows = await rpc('acx_login', { p_email: email, p_password: pass, p_company: company || null }); }
-    catch (e) { if (e.code === 'missing') return signInLegacy(email, pass, company); throw e; }   /* acx_login not installed yet: remove this line once step2_secure_login.sql is run */
-    if (!Array.isArray(rows) || !rows.length) return null;
-    return finishSignIn(rows, email);
-  }
-
-  async function finishSignIn(ok, email) {
-    var row = ok[0];
-    if (ok.length > 1) {
-      var pick = w.prompt('This login belongs to more than one company:\n' + ok.map(function (x, n) { return (n + 1) + '. ' + ((x.data && x.data.companyName) || x.company_id) + ' (' + x.company_id + ')'; }).join('\n') + '\n\nType the number to open:', '1');
-      row = ok[(parseInt(pick, 10) || 1) - 1] || ok[0];
-    }
-    var msg = await gate(row.company_id, email); if (msg) throw err('blocked', msg);
-    try { if (row.session && w.AcxSession) w.AcxSession.add(row.session); } catch (e) {}   /* session token for row-level security */
-    var d = row.data || {};
-    return { companyId: row.company_id, company: d.companyName || '', name: d.fullName || d.username || email.split('@')[0], email: email, role: mapRole(d.role, d) };
-  }
-
-  /* OLD path (reads the hash into the browser). Only used until acx_login exists. */
-  async function signInLegacy(email, pass, company) {
-    email = low(email);
     var r = await req('app_accounts?select=login_id,username,company_id,data&login_id=eq.' + enc(email));
     if (!r.ok) throw err('offline', 'Could not read accounts (' + r.status + '). Run acacia_apps_cloud.sql in Supabase.');
     var rows = await r.json(), ok = [], cn = low(company);
@@ -180,13 +170,15 @@ function hpContact(e){
       row = ok[(parseInt(pick, 10) || 1) - 1] || ok[0];
     }
     var msg = await gate(row.company_id, email); if (msg) throw err('blocked', msg);
+    try { if (w.AcxSession) await w.AcxSession.start(email, pass, row.company_id); } catch (e) {}
     var d = row.data || {};
     return { companyId: row.company_id, company: d.companyName || '', name: d.fullName || d.username || email.split('@')[0], email: email, role: mapRole(d.role, d), passwordHash: d.passwordHash, passwordSalt: d.passwordSalt };
   }
 
   async function register(o) {
-    var salt = o.passwordSalt || newSalt(), h = o.passwordHash || await hash(o.password, salt);
+    var salt = newSalt(), h = await hash(o.password, salt);
     var id = await rpc('acx_register_company', { p_company: o.company, p_name: o.name, p_email: low(o.email), p_hash: h, p_salt: salt, p_app: cfg.app, p_plan: o.plan || '', p_billing: o.billing || 'monthly' });
+    try { if (w.AcxSession) await w.AcxSession.start(o.email, o.password, id); } catch (e) {}
     var blocked = await gate(id, o.email);
     return { companyId: id, passwordHash: h, passwordSalt: salt, blocked: blocked };
   }
@@ -194,7 +186,7 @@ function hpContact(e){
   /* teammates added inside an app (CRM Users & Roles). The app's own role is kept per app; Books sees admin/user */
   var booksRole = function (r) { return /^admin/i.test(String(r || '')) ? 'admin' : 'user'; };
   async function addUser(o) {
-    var salt = o.passwordSalt || newSalt(), h = o.passwordHash || await hash(o.password, salt);
+    var salt = newSalt(), h = await hash(o.password, salt);
     await rpc('acx_add_user', { p_company: o.companyId, p_name: o.name, p_email: low(o.email), p_role: booksRole(o.role), p_hash: h, p_salt: salt, p_app: cfg.app, p_app_role: o.role || '' });
     return { passwordHash: h, passwordSalt: salt };
   }
@@ -206,34 +198,26 @@ function hpContact(e){
     try {
       var list = JSON.parse(localStorage.getItem(usersKey) || '[]');
       var rec = { companyId: u.companyId, company: u.company, name: u.name, email: low(u.email), role: u.role, passwordHash: u.passwordHash, passwordSalt: u.passwordSalt };
-      Object.keys(rec).forEach(function (k) { if (rec[k] === undefined) delete rec[k]; });
       var i = list.findIndex(function (x) { return low(x.email) === rec.email && x.companyId === rec.companyId; });
       if (i > -1) { list[i] = Object.assign({}, list[i], rec); delete list[i].password; } else list.push(rec);
       rawSet.call(localStorage, usersKey, JSON.stringify(list));
     } catch (e) {}
   }
-  async function verifyLocal(u, pass) {
-    if (!u) return false;
-    if (u.passwordHash && u.passwordSalt) return verify({ passwordHash: u.passwordHash, passwordSalt: u.passwordSalt }, pass);
-    /* old record from before this fix: accept the plaintext once, then replace it with a salted hash and wipe it */
-    if (typeof u.password === 'string' && u.password === pass) { var s = newSalt(); u.passwordHash = await hash(pass, s); u.passwordSalt = s; delete u.password; return true; }
-    return false;
-  }
-  async function sealLocal(pass) { var s = newSalt(); return { passwordHash: await hash(pass, s), passwordSalt: s }; }
+  function verifyLocal(u, pass) { return verify(u, pass); }
 
   /* accounts that only ever existed in this browser get a cloud company; their data and teammates move with them.
      'all' is the local users array: it is updated in place (caller saves it). Returns the signed-in user's new record. */
   async function migrate(u, pass, all) {
     var oldId = u.companyId, same = (all || [u]).filter(function (x) { return x.companyId === oldId; });
-    var owner = same.find(function (x) { return /^admin/i.test(String(x.role || 'Administrator')) && (x.password || x.passwordHash); }) || u;
+    var owner = same.find(function (x) { return /^admin/i.test(String(x.role || 'Administrator')) && x.password; }) || u;
     var ownerPass = owner === u ? pass : owner.password;
-    var r = await register({ company: owner.company, name: owner.name, email: owner.email, password: ownerPass, passwordHash: owner.passwordHash, passwordSalt: owner.passwordSalt });
+    var r = await register({ company: owner.company, name: owner.name, email: owner.email, password: ownerPass });
     for (var i = 0; i < same.length; i++) {
       var x = same[i];
       if (x === owner) { x.passwordHash = r.passwordHash; x.passwordSalt = r.passwordSalt; }
       else {
         var pw = x === u ? pass : x.password;
-        if (pw || x.passwordHash) { try { var h = await addUser({ companyId: r.companyId, name: x.name, email: x.email, password: pw, passwordHash: x.passwordHash, passwordSalt: x.passwordSalt, role: x.role || 'Administrator' }); x.passwordHash = h.passwordHash; x.passwordSalt = h.passwordSalt; } catch (e) { continue; } }
+        if (pw) { try { var h = await addUser({ companyId: r.companyId, name: x.name, email: x.email, password: pw, role: x.role || 'Administrator' }); x.passwordHash = h.passwordHash; x.passwordSalt = h.passwordSalt; } catch (e) { continue; } }
         else continue;
       }
       delete x.password; x.companyId = r.companyId;
@@ -243,207 +227,42 @@ function hpContact(e){
     return same.find(function (x) { return low(x.email) === low(u.email) && x.companyId === r.companyId; }) || null;
   }
 
-  /* ---- data sync (one JSON blob per company per app) ----
-     Record-level three-way merge + compare-and-swap push, so several people editing the same company at once do not overwrite each other.
-       base = the copy last agreed with the cloud (acx_base_*), local = this browser's copy, remote = the cloud's copy.
-     - records (arrays of objects that have an id) are merged one by one; a record edited on one side and deleted on the other is kept
-     - a field changed on both sides keeps this browser's value; counters (next..., ...number) keep the larger value
-     - a push only succeeds if the cloud copy is still the one we merged with (updated_at must match); otherwise we merge again */
-  var syncTimer = 0, syncBusy = false, pendingRender = false, hookReload = null, hookRender = null;
+  /* ---- data sync (one JSON blob per company per app) ---- */
   function tsKey(c) { return 'acx_ts_' + cfg.app + '_' + (c || ctx.companyId); }
   function dirtyKey(c) { return 'acx_dirty_' + cfg.app + '_' + (c || ctx.companyId); }
-  function baseKey(c) { return 'acx_base_' + cfg.app + '_' + (c || ctx.companyId); }
-
-  /*MERGE-START*/
-  function canon(v) {
-    if (Array.isArray(v)) return '[' + v.map(canon).join(',') + ']';
-    if (v && typeof v === 'object') return '{' + Object.keys(v).sort().map(function (k) { return JSON.stringify(k) + ':' + canon(v[k]); }).join(',') + '}';
-    return JSON.stringify(v);
+  async function pullRow(app) {
+    var r = await req('acacia_app_data?select=value,updated_at&key=eq.data&company_id=eq.' + enc(ctx.companyId) + '&app=eq.' + enc(app));
+    if (!r.ok) return null; var j = await r.json(); return j[0] || null;
   }
-  function same(a, b) { return canon(a) === canon(b); }
-  function isObj(x) { return !!x && typeof x === 'object' && !Array.isArray(x); }
-  function idKeyFor(arrs) {
-    var cands = ['id', '_id', 'uid'];
-    for (var i = 0; i < cands.length; i++) {
-      var c = cands[i];
-      var ok = arrs.every(function (a) {
-        var seen = {};
-        return a.every(function (x) {
-          if (!isObj(x) || x[c] == null || x[c] === '') return false;
-          var k = String(x[c]); if (seen[k]) return false; seen[k] = 1; return true;
-        });
-      });
-      if (ok) return c;
-    }
-    return null;
-  }
-  function mergeArr(b, l, r) {
-    var k = idKeyFor([b, l, r]), out = [], seen = {};
-    if (k) {
-      var mb = {}, ml = {}, mr = {};
-      b.forEach(function (x) { mb[x[k]] = x; }); l.forEach(function (x) { ml[x[k]] = x; }); r.forEach(function (x) { mr[x[k]] = x; });
-      var take = function (id) {
-        if (seen[id]) return; seen[id] = 1;
-        var inB = id in mb, inL = id in ml, inR = id in mr;
-        if (inL && inR) out.push(merge3(mb[id], ml[id], mr[id]));
-        else if (inL) { if (!inB || !same(mb[id], ml[id])) out.push(ml[id]); }
-        else if (inR) { if (!inB || !same(mb[id], mr[id])) out.push(mr[id]); }
-      };
-      r.forEach(function (x) { take(x[k]); }); l.forEach(function (x) { take(x[k]); });
-      return out;
-    }
-    /* no ids: treat the array as a set of values */
-    var sb = {}, sl = {}, sr = {};
-    b.forEach(function (x) { sb[canon(x)] = 1; }); l.forEach(function (x) { sl[canon(x)] = 1; }); r.forEach(function (x) { sr[canon(x)] = 1; });
-    var add = function (x) {
-      var c = canon(x); if (seen[c]) return; seen[c] = 1;
-      var inB = c in sb, inL = c in sl, inR = c in sr;
-      if ((inL && inR) || (inL && !inB) || (inR && !inB)) out.push(x);
-    };
-    r.forEach(add); l.forEach(add);
-    return out;
-  }
-  function merge3(b, l, r, name) {
-    if (same(l, r)) return l;
-    if (same(b, l)) return r;
-    if (same(b, r)) return l;
-    if (Array.isArray(l) && Array.isArray(r)) return mergeArr(Array.isArray(b) ? b : [], l, r);
-    if (isObj(l) && isObj(r)) {
-      var bb = isObj(b) ? b : {}, out = {}, keys = {};
-      [l, r, bb].forEach(function (o) { Object.keys(o).forEach(function (k) { keys[k] = 1; }); });
-      Object.keys(keys).forEach(function (k) {
-        var inB = k in bb, inL = k in l, inR = k in r;
-        if (inL && inR) out[k] = merge3(bb[k], l[k], r[k], k);
-        else if (inL) { if (!inB || !same(bb[k], l[k])) out[k] = l[k]; }
-        else if (inR) { if (!inB || !same(bb[k], r[k])) out[k] = r[k]; }
-      });
-      return out;
-    }
-    if (typeof l === 'number' && typeof r === 'number' && /^(next|counter|seq)|(number|counter|seq)$/i.test(name || '')) return Math.max(l, r);
-    return l;
-  }
-  function mergeValue(baseStr, localStr, remoteStr) {
-    var p = function (s) { try { return JSON.parse(s); } catch (e) { return undefined; } };
-    var l = p(localStr), r = p(remoteStr);
-    if (l === undefined) return remoteStr;
-    if (r === undefined) return localStr;
-    return JSON.stringify(merge3(baseStr == null ? undefined : p(baseStr), l, r));
-  }
-  /*MERGE-END*/
-
-  async function getRow() {
-    var r = await req('acacia_app_data?select=value,updated_at&key=eq.data&company_id=eq.' + enc(ctx.companyId) + '&app=eq.' + enc(cfg.app));
-    if (!r.ok) throw err('offline', 'Could not read data (' + r.status + ')');
-    var j = await r.json(), row = j[0] || null;
-    if (row && typeof row.value !== 'string') row.value = JSON.stringify(row.value);
-    return row;
-  }
-  /* compare-and-swap write: succeeds only if the cloud copy still has updated_at = prevTs (or does not exist yet when prevTs is empty) */
-  async function casPush(v, prevTs) {
-    var now = new Date().toISOString(), r, j;
+  async function pushNow() {
+    if (!ctx || !isCloudId(ctx.companyId)) return false;
+    var v = localStorage.getItem(cfg.dataKey(ctx.companyId)); if (v == null) return false;
     try {
-      if (!prevTs) {
-        r = await req('acacia_app_data', { method: 'POST', headers: Object.assign({}, H, { Prefer: 'return=representation' }), body: JSON.stringify({ company_id: ctx.companyId, app: cfg.app, key: 'data', value: v, updated_at: now }) });
-        if (r.status === 409) return 'conflict';
-      } else {
-        r = await req('acacia_app_data?key=eq.data&company_id=eq.' + enc(ctx.companyId) + '&app=eq.' + enc(cfg.app) + '&updated_at=eq.' + enc(prevTs), { method: 'PATCH', headers: Object.assign({}, H, { Prefer: 'return=representation' }), body: JSON.stringify({ value: v, updated_at: now }) });
-      }
-      if (!r.ok) return 'error';
-      j = await r.json();
-      if (!j[0]) return 'conflict';
-      return { ts: j[0].updated_at };
-    } catch (e) { return 'error'; }
-  }
-  function commit(v, ts) {
-    rawSet.call(localStorage, tsKey(), ts || '');
-    rawSet.call(localStorage, baseKey(), v);
-    localStorage.removeItem(dirtyKey());
-  }
-  async function syncNow() {
-    if (!ctx || !isCloudId(ctx.companyId) || syncBusy) return false;
-    syncBusy = true;
-    var changed = false;
-    try {
-      for (var n = 0; n < 4; n++) {
-        var dk = cfg.dataKey(ctx.companyId), local = localStorage.getItem(dk), res, row = await getRow();
-        var last = localStorage.getItem(tsKey()), dirty = localStorage.getItem(dirtyKey()) === '1';
-        if (!row) {
-          if (local == null) break;
-          res = await casPush(local, null);
-          if (res === 'conflict') continue;
-          if (res === 'error') break;
-          if (localStorage.getItem(dk) === local) commit(local, res.ts);
-          break;
-        }
-        if (row.updated_at === last) {                       /* cloud unchanged since our last sync */
-          if (!dirty || local == null) break;
-          if (local === row.value) { commit(local, row.updated_at); break; }
-          res = await casPush(local, row.updated_at);
-          if (res === 'conflict') continue;
-          if (res === 'error') break;
-          if (localStorage.getItem(dk) === local) commit(local, res.ts);
-          break;
-        }
-        if (!dirty || local == null) {                       /* cloud moved on, nothing of ours to keep: take the cloud copy */
-          rawSet.call(localStorage, dk, row.value); commit(row.value, row.updated_at); changed = true; break;
-        }
-        var merged = mergeValue(localStorage.getItem(baseKey()), local, row.value);
-        if (merged === row.value) {
-          if (localStorage.getItem(dk) === local) { rawSet.call(localStorage, dk, merged); commit(merged, row.updated_at); changed = true; }
-          break;
-        }
-        res = await casPush(merged, row.updated_at);
-        if (res === 'conflict') continue;
-        if (localStorage.getItem(dk) !== local) break;       /* edited while we were saving: leave it, the next sync merges it in */
-        rawSet.call(localStorage, dk, merged); changed = true;
-        if (res === 'error') { rawSet.call(localStorage, baseKey(), row.value); break; }
-        commit(merged, res.ts);
-        break;
-      }
+      var r = await req('acacia_app_data?on_conflict=company_id,app,key', { method: 'POST', headers: Object.assign({}, H, { Prefer: 'resolution=merge-duplicates,return=representation' }), body: JSON.stringify({ company_id: ctx.companyId, app: cfg.app, key: 'data', value: v }) });
+      if (r.ok) { var j = await r.json(); rawSet.call(localStorage, tsKey(), (j[0] && j[0].updated_at) || ''); localStorage.removeItem(dirtyKey()); return true; }
     } catch (e) {}
-    syncBusy = false;
-    if (changed) applyRemote();
-    return changed;
+    return false;
   }
   function schedule() {
     if (!ctx || !isCloudId(ctx.companyId)) return;
     rawSet.call(localStorage, dirtyKey(), '1');
-    clearTimeout(timer); timer = setTimeout(function () { syncNow(); }, 2500);
+    clearTimeout(timer); timer = setTimeout(pushNow, 2500);
   }
-  /* page closing: one last compare-and-swap write; it only goes through if nobody else saved since our last sync (otherwise it stays unsaved and is merged next time) */
   function flush() {
     if (!ctx || !isCloudId(ctx.companyId) || localStorage.getItem(dirtyKey()) !== '1') return;
     clearTimeout(timer);
-    var v = localStorage.getItem(cfg.dataKey(ctx.companyId)), last = localStorage.getItem(tsKey());
-    if (v == null || !last) return;
-    var dk = dirtyKey();
+    var v = localStorage.getItem(cfg.dataKey(ctx.companyId)); if (v == null) return;
     try {
-      fetch(URL_ + '/rest/v1/acacia_app_data?key=eq.data&company_id=eq.' + enc(ctx.companyId) + '&app=eq.' + enc(cfg.app) + '&updated_at=eq.' + enc(last), { method: 'PATCH', keepalive: v.length < 60000, headers: Object.assign({}, H, { Prefer: 'return=representation' }), body: JSON.stringify({ value: v, updated_at: new Date().toISOString() }) })
-        .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (j) { if (j && j.length) localStorage.removeItem(dk); })
-        .catch(function () {});
+      fetch(URL_ + '/rest/v1/acacia_app_data?on_conflict=company_id,app,key', { method: 'POST', keepalive: v.length < 60000, headers: Object.assign({}, H, { Prefer: 'resolution=merge-duplicates,return=minimal' }), body: JSON.stringify({ company_id: ctx.companyId, app: cfg.app, key: 'data', value: v }) }).then(function (r) { if (r.ok) localStorage.removeItem(dirtyKey()); }).catch(function () {});
     } catch (e) {}
   }
-  async function pullData() { await syncNow(); }
-
-  /* the app registers two callbacks: reload (re-read its in-memory data from storage) and render (redraw the current screen) */
-  function onRemote(reload, render) { hookReload = reload; hookRender = render; }
-  function typing() {
-    var a = document.activeElement;
-    return !!a && (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.isContentEditable) && a.type !== 'button' && a.type !== 'checkbox' && a.type !== 'radio';
+  async function pullData() {
+    var row = await pullRow(cfg.app);
+    var dirty = localStorage.getItem(dirtyKey()) === '1', last = localStorage.getItem(tsKey());
+    if (row && !dirty && row.updated_at !== last) { rawSet.call(localStorage, cfg.dataKey(ctx.companyId), row.value); rawSet.call(localStorage, tsKey(), row.updated_at); }
+    else if (!row) { if (localStorage.getItem(cfg.dataKey(ctx.companyId)) != null) await pushNow(); }
+    else if (dirty) await pushNow();
   }
-  function paint() {
-    if (!pendingRender || typing()) return;
-    pendingRender = false;
-    try { if (hookRender) hookRender(); } catch (e) { console.error(e); }
-  }
-  function applyRemote() {
-    try { if (hookReload) hookReload(); } catch (e) { console.error(e); }
-    pendingRender = true; paint();
-  }
-  function startPoll() { clearInterval(syncTimer); syncTimer = setInterval(function () { if (document.hidden) return; paint(); syncNow(); }, 30000); }
-  function stopPoll() { clearInterval(syncTimer); syncTimer = 0; }
-
   /* read-only copies of another app's data (e.g. Expenses reads Payroll) */
   async function pullExtras() {
     var ex = cfg.readFrom || [];
@@ -464,10 +283,10 @@ function hpContact(e){
     if (!isCloudId(ctx.companyId)) return 'local';
     var msg = await gate(ctx.companyId, ctx.email); if (msg) return 'blocked:' + msg;
     try { await pullData(); await pullExtras(); } catch (e) {}
-    startPoll(); heartbeat(); clearInterval(hbTimer); hbTimer = setInterval(function () { heartbeat(); }, 3e5);
+    heartbeat(); clearInterval(hbTimer); hbTimer = setInterval(function () { heartbeat(); }, 3e5);
     return 'ok';
   }
-  function stop() { flush(); stopPoll(); clearInterval(hbTimer); ctx = null; }
+  function stop() { flush(); clearInterval(hbTimer); ctx = null; }
 
   function init(c) {
     cfg = c;
@@ -476,7 +295,7 @@ function hpContact(e){
       try { if (this === w.localStorage && ctx && k === cfg.dataKey(ctx.companyId)) schedule(); } catch (e) {}
     };
     w.addEventListener('pagehide', flush);
-    document.addEventListener('visibilitychange', function () { if (document.hidden) flush(); else syncNow(); });
+    document.addEventListener('visibilitychange', function () { if (document.hidden) flush(); });
   }
 
   /* sign-up plan note: reads #regPlan / #regBilling and shows what the company will pay */
@@ -489,1472 +308,564 @@ function hpContact(e){
   };
   setTimeout(function () { try { if (w.acxPlanChanged) w.acxPlanChanged(); } catch (e) {} }, 0);
 
-  w.AcaciaCloud = { onRemote: onRemote, sync: syncNow, init: init, signIn: signIn, register: register, addUser: addUser, setRole: setRole, removeUser: removeUser, cacheUser: cacheUser, verifyLocal: verifyLocal, sealLocal: sealLocal, migrate: migrate, start: start, stop: stop, flush: flush, isCloudId: isCloudId, gate: gate, URL: URL_, KEY: KEY_, rpc: rpc, req: req };
+  w.AcaciaCloud = { init: init, signIn: signIn, register: register, addUser: addUser, setRole: setRole, removeUser: removeUser, cacheUser: cacheUser, verifyLocal: verifyLocal, migrate: migrate, start: start, stop: stop, flush: flush, isCloudId: isCloudId, gate: gate, URL: URL_, KEY: KEY_, rpc: rpc, req: req };
 })(window);
 ;
-/* =========================================================
-   ACACIA PROJECTS — data model & state
-========================================================= */
-const STORAGE_KEY = 'acaciaProjectsData_v1';
+/* ============ Shared auth linked to Acacia ERP (app 1707) ============ */
+const SESSION_KEY='acacia_session';
+function currentUser(){try{return JSON.parse(localStorage.getItem(SESSION_KEY)||'null')}catch{return null}}
+function initials(n){return (n||'?').split(/\s+/).map(s=>s[0]).slice(0,2).join('').toUpperCase()}
+function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]))}
+function toCompanyId(name){ return 'comp_' + String(name||'').toLowerCase().replace(/[^a-z0-9]/g,'_'); }
+function switchAuthTab(t){const s=t==='signin';
+  tabSignIn.classList.toggle('text-acacia-700',s);tabSignIn.classList.toggle('border-acacia-600',s);
+  tabSignIn.classList.toggle('text-slate-500',!s);tabSignIn.classList.toggle('border-transparent',!s);
+  tabSignUp.classList.toggle('text-acacia-700',!s);tabSignUp.classList.toggle('border-acacia-600',!s);
+  tabSignUp.classList.toggle('text-slate-500',s);tabSignUp.classList.toggle('border-transparent',s);
+  signinForm.classList.toggle('hidden',!s);signupForm.classList.toggle('hidden',s);}
 
-const DEFAULT_SETTINGS = {
-  company: { name:'', address:'', phone:'', email:'', currency:'KES' },
-  projectStatuses: ['Planning','Not Started','In Progress','On Hold','Completed','Cancelled'],
-  taskStatuses: ['To Do','In Progress','Review','Completed'],
-  milestoneStatuses: ['Not Started','In Progress','Completed'],
-  issueStatuses: ['Open','Investigating','In Progress','Resolved','Closed'],
-  priorities: ['Low','Medium','High','Urgent'],
-  projectRoles: ['Administrator','Project Manager','Team Lead','Project Member','Viewer'],
-  workHoursPerDay: 8,
-  projectNumberingPrefix: 'PRJ-',
-  nextProjectNumber: 1
-};
+/* Sidepanel toggle functions */
+function toggleAcaciaNotebook(){ document.getElementById('acaciaNotebookPanel')?.classList.toggle('hidden'); }
+function toggleWebinarPanel(){ document.getElementById('webinarPanel')?.classList.toggle('hidden'); }
+function toggleCommPanel(){ document.getElementById('commPanel')?.classList.toggle('hidden'); }
+function toggleSupportPopup(){ document.getElementById('supportPopup')?.classList.toggle('hidden'); }
 
-function freshState(){
-  return {
-    projects: [],
-    tasks: [],
-    milestones: [],
-    team: [],
-    timeEntries: [],
-    documents: [],
-    issues: [],
-    settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS))
-  };
+/* Supabase client (shared project with Acacia ERP) */
+const sb = window.supabase.createClient(window.__SUPA_URL__, window.__SUPA_KEY__);
+
+AcaciaCloud.init({app:'Plans', dataKey:function(c){ return 'acx_plans_local_' + c; }});
+const enc = encodeURIComponent;
+
+async function accountExists(email){
+  try{ const r = await AcaciaCloud.req('app_accounts?select=login_id&login_id=eq.' + enc(String(email).toLowerCase())); if(!r.ok) return false; return (await r.json()).length > 0; }catch(e){ return false; }
 }
+function authErr(el, msg){ el.textContent = msg; el.classList.remove('hidden'); }
 
-let state = null;
-
-function dataKeyFor(companyId){ return STORAGE_KEY + '_' + companyId; }
-
-function loadState(companyId){
-  try{
-    const raw = localStorage.getItem(dataKeyFor(companyId));
-    if(!raw) return freshState();
-    const parsed = JSON.parse(raw);
-    const base = freshState();
-    return Object.assign(base, parsed, { settings: Object.assign(base.settings, parsed.settings||{}) });
-  }catch(e){
-    return freshState();
-  }
-}
-function saveState(){
-  if(!CURRENT_USER) return;
-  localStorage.setItem(dataKeyFor(CURRENT_USER.companyId), JSON.stringify(state));
+async function doSignIn(e){
+  e.preventDefault();
+  siError.classList.add('hidden');
+  const company=(siCompany.value||'').trim();
+  const email=(siEmail.value||'').trim().toLowerCase();
+  const pass=siPass.value;
+  if(!company||!email||!pass){ authErr(siError,'Please enter your company name, email and password.'); return; }
+  let u=null;
+  try{ u = await AcaciaCloud.signIn(email, pass, company); }
+  catch(err){ authErr(siError, err.code==='blocked' ? err.message : 'Could not reach Acacia. Check your internet connection and try again.'); return; }
+  if(!u){ authErr(siError,'That email and password combination was not found.'); return; }
+  localStorage.setItem(SESSION_KEY, JSON.stringify({ email:u.email, name:u.name, companyId:u.companyId, companyName:u.company }));
+  boot();
 }
 
-/* ---------- Auth (shared login with Acacia Books apps) ---------- */
-const USERS_KEY = 'acaciaCrmUsers';
-const SESSION_KEY = 'acaciaCrmSession';
-let CURRENT_USER = null;
-
-AcaciaCloud.init({app:'Projects', dataKey:dataKeyFor});
-AcaciaCloud.onRemote(function(){ if(!CURRENT_USER) return; state = loadState(CURRENT_USER.companyId); if(!state.settings.company.name) state.settings.company.name = CURRENT_USER.company; }, function(){ if(!CURRENT_USER) return; render(); });
-function getUsers(){
-  try{ return JSON.parse(localStorage.getItem(USERS_KEY) || '[]'); }catch(e){ return []; }
-}
-function saveUsers(list){ localStorage.setItem(USERS_KEY, JSON.stringify(list)); }
-function getSession(){
-  try{ return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); }catch(e){ return null; }
-}
-function setSession(user){ localStorage.setItem(SESSION_KEY, JSON.stringify({email:user.email, companyId:user.companyId, name:user.name, company:user.company})); }
-function clearSession(){ localStorage.removeItem(SESSION_KEY); }
-
-function switchAuthTab(which){
-  document.getElementById('tabLoginBtn').classList.toggle('active', which==='login');
-  document.getElementById('tabRegisterBtn').classList.toggle('active', which==='register');
-  document.getElementById('loginPane').style.display = which==='login' ? 'block' : 'none';
-  document.getElementById('registerPane').style.display = which==='register' ? 'block' : 'none';
-  document.getElementById('loginError').classList.remove('show');
-  document.getElementById('registerError').classList.remove('show');
-}
-function showAuthError(id, msg){
-  const el = document.getElementById(id);
-  el.textContent = msg;
-  el.classList.add('show');
-}
-async function handleRegister(){
-  const company = document.getElementById('regCompany').value.trim();
-  const name = document.getElementById('regName').value.trim();
-  const email = document.getElementById('regEmail').value.trim().toLowerCase();
-  const password = document.getElementById('regPassword').value;
-  if(!company || !name || !email || !password){ showAuthError('registerError','Please fill in every field.'); return; }
-  if(password.length < 6){ showAuthError('registerError','Password must be at least 6 characters.'); return; }
-  const users = getUsers();
-  let user, viaCloud = false;
-  try{
-    const c = await AcaciaCloud.register({company, name, email, password, plan:(document.getElementById('regPlan')||{}).value||'', billing:(document.getElementById('regBilling')||{}).value||'monthly'});
-    if(c.blocked){ showAuthError('registerError','Account created. ' + c.blocked); return; }
-    user = {companyId:c.companyId, company, name, email, role:'Administrator', passwordHash:c.passwordHash, passwordSalt:c.passwordSalt};
-    viaCloud = true;
-  }catch(e){
-    if(e.code === 'exists'){ showAuthError('registerError','This company already has an account with that email. Please sign in instead.'); return; }
-    if(e.code !== 'offline'){ showAuthError('registerError', e.message || 'Could not create the account. Please try again.'); return; }
-    if(users.some(u=>u.email===email)){ showAuthError('registerError','An account with that email already exists.'); return; }
-    user = Object.assign({companyId:uid('co'), company, name, email, role:'Administrator'}, await AcaciaCloud.sealLocal(password));   // offline: uploaded the next time you sign in online
-  }
-  if(viaCloud) AcaciaCloud.cacheUser(USERS_KEY, user); else { users.push(user); saveUsers(users); }
-  setSession(user);
-  await enterApp(user);
-}
-async function handleLogin(){
-  const email = document.getElementById('loginEmail').value.trim().toLowerCase();
-  const password = document.getElementById('loginPassword').value;
-  const company = (document.getElementById('loginCompany').value || '').trim();
-  if(!company || !email || !password){ showAuthError('loginError','Please enter your company name, email and password.'); return; }
-  let user = null;
-  try{
-    user = await AcaciaCloud.signIn(email, password, company);
-    if(user) AcaciaCloud.cacheUser(USERS_KEY, user);
-  }catch(e){
-    if(e.code === 'blocked'){ showAuthError('loginError', e.message); return; }
-  }
-  if(!user){
-    const users = getUsers();
-    for(const u of users){ if(u.email === email && String(u.company||'').trim().toLowerCase() === company.toLowerCase() && await AcaciaCloud.verifyLocal(u, password)){ user = u; break; } }
-    if(!user){ showAuthError('loginError','That email and password combination was not found.'); return; }
-    saveUsers(users);   /* keeps the plaintext-to-hash upgrade */
-    if(!AcaciaCloud.isCloudId(user.companyId)){
-      try{ const moved = await AcaciaCloud.migrate(user, password, users); if(moved){ saveUsers(users); user = moved; } }catch(e){ /* offline: stays on this device for now */ }
-    }
-  }
-  setSession(user);
-  await enterApp(user);
-}
-function handleLogout(){
-  AcaciaCloud.stop();
-  clearSession();
-  CURRENT_USER = null;
-  state = null;
-  document.getElementById('app').classList.remove('ready');
-  hpShowHome();
-  document.getElementById('loginEmail').value = '';
-  document.getElementById('loginPassword').value = '';
-  switchAuthTab('login');
-}
-function initials(name){ return (name||'').split(' ').filter(Boolean).slice(0,2).map(s=>s[0].toUpperCase()).join(''); }
-
-async function enterApp(user){
-  let res = 'local';
-  try{ res = await AcaciaCloud.start(user); }catch(e){}
-  if(String(res).indexOf('blocked:') === 0){
-    try{ clearSession(); }catch(e){}
-    AcaciaCloud.stop();
-    alert(String(res).slice(8));
-    location.reload();
-    return;
-  }
-  return __enterAppLocal(user);
-}
-function __enterAppLocal(user){
-  if(!user.role) user.role = 'Administrator';
-  CURRENT_USER = user;
-  state = loadState(user.companyId);
-  if(!state.settings.company.name) state.settings.company.name = user.company;
-  document.getElementById('authScreen').style.display = 'none'; hpHideHome();
-  document.getElementById('app').classList.add('ready');
-  document.getElementById('sidebarUser').innerHTML = `<div style="font-weight:700;color:#fff;">${esc(user.name)}</div><div style="font-size:12px;">${esc(user.company)}</div>`;
-  renderNav();
-  route = {section:'dashboard', params:{}};
-  render();
-}
-function checkSessionOnLoad(){
-  const session = getSession();
-  if(session){
-    const users = getUsers();
-    const user = users.find(u=>u.email===session.email && u.companyId===session.companyId);
-    if(user){ enterApp(user); return; }
-  }
-  hpShowHome();
+async function doSignUp(e){
+  e.preventDefault();
+  suError.classList.add('hidden');
+  const company=(suCompany.value||'').trim();
+  const email=(suEmail.value||'').trim().toLowerCase();
+  const pass=suPass.value;
+  if(!company||!email){ authErr(suError,'Company name and email are required.'); return; }
+  if(!pass||pass.length<6){ authErr(suError,'Password must be at least 6 characters.'); return; }
+  const fullName=((suFirst.value||'')+' '+(suLast.value||'')).trim()||email;
+  let r;
+  try{ r = await AcaciaCloud.register({company, name:fullName, email, password:pass, plan:(document.getElementById('regPlan')||{}).value||'', billing:(document.getElementById('regBilling')||{}).value||'monthly'}); }
+  catch(err){ authErr(suError, err.code==='exists' ? 'This company already has an account with that email - use Sign In instead.' : (err.code==='offline' ? 'Could not reach Acacia. Check your internet connection and try again.' : (err.message||'Could not create the account.'))); return; }
+  if(r.blocked){ authErr(suError,'Account created. ' + r.blocked); return; }
+  localStorage.setItem(SESSION_KEY, JSON.stringify({ email, name:fullName, companyId:r.companyId, companyName:company }));
+  boot();
 }
 
-/* ---------- Theme (dark mode) ---------- */
-const THEME_KEY = 'acacia_theme';
-function toggleTheme(){
-  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-  if(isDark){
-    document.documentElement.removeAttribute('data-theme');
-    try{ localStorage.setItem(THEME_KEY, 'light'); }catch(e){}
-  }else{
-    document.documentElement.setAttribute('data-theme', 'dark');
-    try{ localStorage.setItem(THEME_KEY, 'dark'); }catch(e){}
-  }
-  updateThemeToggleIcon();
-}
-function updateThemeToggleIcon(){
-  const btn = document.getElementById('themeToggle');
-  if(!btn) return;
-  btn.textContent = document.documentElement.getAttribute('data-theme') === 'dark' ? '☀️' : '🌙';
-}
+function signOut(){AcaciaCloud.stop();localStorage.removeItem(SESSION_KEY);location.reload()}
+function toggleApps(){appsMenu.classList.toggle('hidden')}
+document.addEventListener('click',e=>{if(!e.target.closest('#appsMenu')&&!e.target.closest('button[onclick*=toggleApps]')) appsMenu?.classList.add('hidden')});
 
-function uid(prefix){ return prefix + '_' + Math.random().toString(36).slice(2,9); }
-function esc(str){
-  if(str===undefined||str===null) return '';
-  return String(str).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-function fmtMoney(n){
-  n = Number(n)||0;
-  return state.settings.company.currency + ' ' + n.toLocaleString('en-KE',{maximumFractionDigits:0});
-}
-function fmtDate(d){
-  if(!d) return '—';
-  const dt = new Date(d+'T00:00:00');
-  if(isNaN(dt)) return d;
-  return dt.toLocaleDateString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric'});
-}
-function todayISO(){ return new Date().toISOString().slice(0,10); }
-function daysDiff(a,b){ return Math.round((new Date(b)-new Date(a))/86400000); }
-function toast(msg){
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  clearTimeout(toast._h);
-  toast._h = setTimeout(()=>t.classList.remove('show'), 2200);
-}
+/* ============ Company-scoped keys (matches app 1707's getCompanyKey) ============ */
+function currentCompanyId(){ const u=currentUser(); return u?.companyId || 'default_company'; }
+function scopedKey(k){ return k + '_' + currentCompanyId(); }
 
-/* =========================================================
-   Entity schemas
-========================================================= */
-function projectOptions(){ return state.projects.map(p=>({value:p.id,label:p.name||'(unnamed project)'})); }
-
-/* ---------- Plan / Budget pickers, fed from Acacia Books by acacia-bridge.js (window.AcaciaBooksData) ---------- */
-function booksData(){ return window.AcaciaBooksData || {plans:[], budgets:[]}; }
-function budgetTotal(b){ return ((b&&b.months)||[]).reduce((s,m)=>s+(Number(m&&m.amount)||0),0); }
-function budgetKey(b){ return [b.account||'', b.department||'', b.period||''].join('|'); }
-function planOptions(){ return (booksData().plans||[]).filter(p=>p&&p.title).map(p=>({value:p.title, label:p.title+(p.endDate?'  (to '+p.endDate+')':'')})); }
-function budgetOptions(){ return (booksData().budgets||[]).filter(b=>b&&(b.account||b.department)).map(b=>({value:budgetKey(b), label:(b.account||'—')+(b.department?' — '+b.department:'')+(b.period?' ('+b.period+')':'')+' · '+budgetTotal(b).toLocaleString()})); }
-function matchBudgetForPlan(p){
-  const t = String(p&&p.linkedBudget||'').trim().toLowerCase(); if(!t) return null;
-  return (booksData().budgets||[]).find(b=>{ const a=String(b.account||'').toLowerCase(), d=String(b.department||'').toLowerCase(); return t===a || t===d || t===(a+' - '+d) || t===(a+' — '+d) || (a && t.indexOf(a)===0); }) || null;
-}
-function teamOptions(){ return state.team.map(t=>({value:t.id,label:t.name||'(unnamed)'})); }
-function milestoneOptionsFor(projectId){ return state.milestones.filter(m=>m.projectId===projectId).map(m=>({value:m.id,label:m.name})); }
-
-function projectName(id){ const p = state.projects.find(p=>p.id===id); return p? p.name : '—'; }
-function memberName(id){ const t = state.team.find(t=>t.id===id); return t? t.name : (id||'—'); }
-
-const ENTITIES = {
-  projects: {
-    label:'Project', labelPlural:'Projects', icon:'◧',
-    fields: [
-      {key:'planTitle', label:'Plan (from Plans module)', type:'select', options:planOptions},
-      {key:'budgetRef', label:'Budget (from Budgets module)', type:'select', options:budgetOptions},
-      {key:'name', label:'Project Name', type:'text', required:true},
-      {key:'code', label:'Project Code', type:'text', placeholder:'auto-generated if left blank'},
-      {key:'client', label:'Client', type:'text'},
-      {key:'manager', label:'Project Manager', type:'select', options:teamOptions},
-      {key:'status', label:'Status', type:'select', options:()=>state.settings.projectStatuses},
-      {key:'priority', label:'Priority', type:'select', options:()=>state.settings.priorities},
-      {key:'startDate', label:'Start Date', type:'date'},
-      {key:'endDate', label:'Expected End Date', type:'date'},
-      {key:'budget', label:'Budget', type:'number'},
-      {key:'actualCost', label:'Actual Cost', type:'number'},
-      {key:'labourCost', label:'Labour Cost', type:'number'},
-      {key:'materialsCost', label:'Materials Cost', type:'number'},
-      {key:'servicesCost', label:'Services Cost', type:'number'},
-      {key:'otherCost', label:'Other Cost', type:'number'},
-      {key:'progress', label:'Progress %', type:'number', min:0, max:100},
-      {key:'description', label:'Description', type:'textarea'},
-    ],
-    columns:['name','code','client','status','priority','progress'],
-    beforeSave:(rec)=>{
-      if(!rec.code){
-        rec.code = state.settings.projectNumberingPrefix + String(state.settings.nextProjectNumber).padStart(3,'0');
-        state.settings.nextProjectNumber++;
-      }
-      rec.progress = Math.max(0, Math.min(100, Number(rec.progress)||0));
-    }
-  },
-  tasks: {
-    label:'Task', labelPlural:'Tasks', icon:'☑',
-    fields:[
-      {key:'name', label:'Task Name', type:'text', required:true},
-      {key:'projectId', label:'Project', type:'select', options:projectOptions},
-      {key:'assignee', label:'Assigned Person', type:'select', options:teamOptions},
-      {key:'status', label:'Status', type:'select', options:()=>state.settings.taskStatuses},
-      {key:'priority', label:'Priority', type:'select', options:()=>state.settings.priorities},
-      {key:'startDate', label:'Start Date', type:'date'},
-      {key:'dueDate', label:'Due Date', type:'date'},
-      {key:'estHours', label:'Estimated Hours', type:'number'},
-      {key:'actualHours', label:'Actual Hours', type:'number'},
-      {key:'dependencies', label:'Dependencies', type:'text', placeholder:'e.g. task names, comma separated'},
-      {key:'checklist', label:'Checklist items (comma separated)', type:'text'},
-      {key:'description', label:'Description', type:'textarea'},
-    ],
-    columns:['name','projectId','assignee','status','priority','dueDate']
-  },
-  milestones: {
-    label:'Milestone', labelPlural:'Milestones', icon:'◎',
-    fields:[
-      {key:'name', label:'Milestone Name', type:'text', required:true},
-      {key:'projectId', label:'Project', type:'select', options:projectOptions},
-      {key:'dueDate', label:'Due Date', type:'date'},
-      {key:'responsible', label:'Responsible Person', type:'select', options:teamOptions},
-      {key:'status', label:'Status', type:'select', options:()=>state.settings.milestoneStatuses},
-      {key:'completion', label:'Completion %', type:'number', min:0, max:100},
-    ],
-    columns:['name','projectId','dueDate','responsible','status','completion']
-  },
-  team: {
-    label:'Team Member', labelPlural:'Team', icon:'☺',
-    fields:[
-      {key:'name', label:'Name', type:'text', required:true},
-      {key:'role', label:'Role', type:'select', options:()=>state.settings.projectRoles},
-      {key:'email', label:'Email', type:'text'},
-      {key:'phone', label:'Phone', type:'text'},
-    ],
-    columns:['name','role','email','phone']
-  },
-  timeEntries: {
-    label:'Time Entry', labelPlural:'Time Tracking', icon:'⏱',
-    fields:[
-      {key:'projectId', label:'Project', type:'select', options:projectOptions},
-      {key:'taskId', label:'Task', type:'select', options:()=>state.tasks.map(t=>({value:t.id,label:t.name}))},
-      {key:'person', label:'Person', type:'select', options:teamOptions},
-      {key:'date', label:'Date', type:'date'},
-      {key:'startTime', label:'Start Time', type:'time'},
-      {key:'endTime', label:'End Time', type:'time'},
-      {key:'description', label:'Description', type:'textarea'},
-    ],
-    columns:['date','projectId','taskId','person','hours'],
-    beforeSave:(rec)=>{
-      if(rec.startTime && rec.endTime){
-        const [sh,sm]=rec.startTime.split(':').map(Number);
-        const [eh,em]=rec.endTime.split(':').map(Number);
-        let mins = (eh*60+em)-(sh*60+sm);
-        if(mins<0) mins+=24*60;
-        rec.hours = +(mins/60).toFixed(2);
-      } else { rec.hours = rec.hours || 0; }
-    }
-  },
-  documents: {
-    label:'Document', labelPlural:'Documents', icon:'▤',
-    fields:[
-      {key:'name', label:'Document Name', type:'text', required:true},
-      {key:'projectId', label:'Project', type:'select', options:projectOptions},
-      {key:'category', label:'Category', type:'select', options:()=>['Proposal','Contract','Plan','Report','Image','Supporting Document']},
-      {key:'link', label:'Link / Reference', type:'text', placeholder:'URL or file reference'},
-      {key:'uploadedBy', label:'Uploaded By', type:'select', options:teamOptions},
-      {key:'date', label:'Date', type:'date'},
-    ],
-    columns:['name','projectId','category','uploadedBy','date']
-  },
-  issues: {
-    label:'Issue', labelPlural:'Issues', icon:'⚑',
-    fields:[
-      {key:'title', label:'Issue', type:'text', required:true},
-      {key:'projectId', label:'Project', type:'select', options:projectOptions},
-      {key:'reportedBy', label:'Reported By', type:'select', options:teamOptions},
-      {key:'assignedTo', label:'Assigned To', type:'select', options:teamOptions},
-      {key:'priority', label:'Priority', type:'select', options:()=>state.settings.priorities},
-      {key:'date', label:'Date Raised', type:'date'},
-      {key:'dueDate', label:'Due Date', type:'date'},
-      {key:'status', label:'Status', type:'select', options:()=>state.settings.issueStatuses},
-      {key:'resolution', label:'Resolution', type:'textarea'},
-    ],
-    columns:['title','projectId','assignedTo','priority','status','dueDate']
-  }
-};
-
-/* =========================================================
-   Navigation
-========================================================= */
-const NAV = [
-  {key:'dashboard', label:'Dashboard'},
-  {key:'projects', label:'Projects'},
-  {key:'tasks', label:'Tasks'},
-  {key:'milestones', label:'Milestones'},
-  {key:'calendar', label:'Calendar'},
-  {key:'team', label:'Team'},
-  {key:'timeEntries', label:'Time Tracking'},
-  {key:'budgets', label:'Budgets'},
-  {key:'documents', label:'Documents'},
-  {key:'issues', label:'Issues'},
-  {key:'reports', label:'Reports'},
-  {key:'settings', label:'Settings'},
+/* Plans Hub modules: the same records Acacia Books uses in its Plans Hub
+   (Plan Hub, Plan Progress, Plan Revenue). Keys match Books' storage keys. */
+const MODULES = [
+  { id:'plans',     label:'Plan Hub',        key:'plans' },
+  { id:'ownership', label:'Ownership',       key:'planOwnerships',  link:'planTitle', group:'Plan Progress' },
+  { id:'progress',  label:'Track Progress',  key:'planProgress',    link:'title' },
+  { id:'expenses',  label:'Track Expenses',  key:'operationalCosts',link:'planTitle', readonly:true },
+  { id:'revisions', label:'Review & Revise', key:'planRevisions',   link:'title' },
+  { id:'actions',   label:'Action Plan',     key:'planActionItems', link:'title' },
+  { id:'revenue',   label:'Plan Revenue',    key:'planRevenue',     link:'planTitle', group:'Revenue' },
+  { id:'employees', label:'Employees',       key:'employees',       hidden:true, readonly:true },
 ];
 
-let route = {section:'dashboard', params:{}};
+const PRIORITY = ['High','Medium','Low'];
+const STATUS_OWN = ['Not Started','In Progress','Completed','On Hold'];
+const STATUS_PROG = ['Not Started','In Progress','Completed','Delayed','On Hold'];
+const GOALS = ['Increase Sales / Revenue','Strategic','Operational','Performance','Development','Cost Reduction'];
+
+/* Field layout per module (t: text | select | date | number | textarea | multi; o: options or 'employees') */
+const FIELDS = {
+  plans: [
+    { k:'title', l:'Plan title', req:1 },
+    { k:'department', l:'Department' },
+    { k:'goalType', l:'Goal type', t:'select', o:GOALS },
+    { k:'priority', l:'Priority', t:'select', o:PRIORITY },
+    { k:'startDate', l:'Start date', t:'date' },
+    { k:'endDate', l:'End date', t:'date' },
+    { k:'target', l:'Target' },
+    { k:'targetAmount', l:'Target amount (KES)', t:'number' },
+    { k:'linkedBudget', l:'Linked budget' },
+    { k:'description', l:'Description', t:'textarea' },
+  ],
+  ownership: [
+    { k:'owner', l:'Owner', t:'select', o:'employees' },
+    { k:'team', l:'Team', t:'multi', o:'employees' },
+    { k:'status', l:'Status', t:'select', o:STATUS_OWN },
+    { k:'date', l:'Date', t:'date' },
+  ],
+  progress: [
+    { k:'progress', l:'Progress %', t:'number', req:1 },
+    { k:'status', l:'Status', t:'select', o:STATUS_PROG },
+    { k:'person', l:'Updated by' },
+    { k:'comment', l:'Comment', t:'textarea' },
+  ],
+  revisions: [
+    { k:'action', l:'Action', t:'select', o:['Extend (new end date)','Revise','Close plan'] },
+    { k:'newEndDate', l:'New end date (for Extend)', t:'date' },
+    { k:'comment', l:'Comment', t:'textarea' },
+  ],
+  actions: [
+    { k:'item', l:'Action item', req:1 },
+    { k:'person', l:'Responsible person' },
+    { k:'due', l:'Due date', t:'date' },
+    { k:'priority', l:'Priority', t:'select', o:PRIORITY },
+    { k:'status', l:'Status', t:'select', o:STATUS_PROG },
+    { k:'notes', l:'Notes', t:'textarea' },
+  ],
+  revenue: [
+    { k:'customer', l:'Customer' },
+    { k:'amount', l:'Amount (KES)', t:'number', req:1 },
+    { k:'fund', l:'Bank / fund' },
+    { k:'note', l:'Note' },
+  ],
+};
+
+/* Table columns per module: [key, heading] */
+const COLS = {
+  ownership: [['owner','Owner'],['team','Team'],['status','Status'],['date','Date']],
+  progress:  [['progress','Progress'],['status','Status'],['person','Updated by'],['comment','Comment'],['date','Date']],
+  expenses:  [['date','Date'],['description','Description'],['category','Category'],['bank','Bank'],['amount','Amount']],
+  revisions: [['action','Action'],['comment','Comment'],['date','Date']],
+  actions:   [['item','Action item'],['person','Person'],['due','Due'],['priority','Priority'],['status','Status'],['notes','Notes']],
+  revenue:   [['source','Source'],['invoiceNumber','Invoice'],['customer','Customer'],['amount','Amount'],['fund','Bank / fund'],['date','Date']],
+};
+
+const store = {};                 // { moduleId: [rows] }
+let active = MODULES[0].id;
+
+function setSync(status, tone){
+  syncStatus.textContent = status;
+  const dot = syncDot; dot.className = 'inline-block w-2 h-2 rounded-full ' +
+    ({ok:'bg-emerald-500',busy:'bg-amber-400 animate-pulse',err:'bg-red-500',idle:'bg-slate-300'}[tone]||'bg-slate-300');
+}
+
+let pullErr=null;
+async function pullOne(m){
+  try {
+    const r = await AcaciaCloud.req('company_state?select=value&company_id=eq.' + enc(currentCompanyId()) + '&key=eq.' + enc(m.key));
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    let v = ((await r.json())[0] || {}).value;
+    if(typeof v === 'string'){ try{ v = JSON.parse(v); }catch(e){ v = []; } }
+    store[m.id] = Array.isArray(v) ? v : [];
+  } catch(e) {
+    console.warn(`Failed pulling key ${m.key}:`, e);
+    pullErr=(e&&e.message)||String(e);
+    store[m.id] = [];
+  }
+}
+async function pullAll(){
+  setSync('syncing…','busy');
+  try{
+    pullErr=null;
+    await Promise.all(MODULES.map(pullOne));
+    const anyData = MODULES.some(m=>Array.isArray(store[m.id]) && store[m.id].length);
+    if(pullErr){ setSync('sync error · '+String(pullErr).slice(0,70),'err'); }
+    else if(!anyData){ setSync('connected · no Books data for company '+currentCompanyId(),'idle'); }
+    else { setSync('synced · '+(currentUser()?.companyName||'workspace'),'ok'); }
+    try{ syncStatus.title = 'Company ID: '+currentCompanyId()+(pullErr?' · '+pullErr:''); }catch(_){}
+    renderView();
+  }catch(e){ console.warn(e); setSync('sync error','err'); }
+}
+async function pushOne(m){
+  setSync('saving…','busy');
+  try{
+    const r = await AcaciaCloud.req('company_state?on_conflict=company_id,key', { method:'POST', headers:{ apikey:AcaciaCloud.KEY, Authorization:'Bearer '+AcaciaCloud.KEY, 'Content-Type':'application/json', Prefer:'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ company_id: currentCompanyId(), key: m.key, value: JSON.stringify(store[m.id]||[]), updated_at: new Date().toISOString() }) });
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+  }catch(error){ setSync('save error','err'); alert('Save failed: '+error.message); return false; }
+  setSync('synced · '+(currentUser()?.companyName||'workspace'),'ok'); return true;
+}
+
+/* ============ Plans Hub views ============ */
+function cellText(v){ if(v==null) return ''; if(typeof v==='object') return JSON.stringify(v); return String(v); }
+
+let selPlan = '';        // title of the plan chosen in the picker
+let editIdx = null;      // index (in store[module]) of the record being edited
+
+const plansList = () => store.plans || [];
+const empNames = () => (store.employees || []).map(e => e && (e.name || e['Full Name'])).filter(Boolean);
+const nowStr = () => new Date().toLocaleString();
+const todayStr = () => new Date().toISOString().slice(0,10);
+const fmtKES = n => 'KES ' + (parseFloat(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+const collected = t => (store.revenue||[]).filter(r => r && r.planTitle===t).reduce((s,r)=>s+(parseFloat(r.amount)||0),0);
+function curPlan(){
+  const ps = plansList();
+  if(!ps.some(p => p && p.title===selPlan)) selPlan = (ps[0] && ps[0].title) || '';
+  return ps.find(p => p && p.title===selPlan) || null;
+}
+function setPlan(v){ selPlan = v; renderView(); }
+function cell(k, v, row){
+  if(Array.isArray(v)) v = v.join(', ');
+  if(k==='progress' && v!=='' && v!=null) return escapeHtml(v + '%');
+  if(k==='amount' || k==='targetAmount') return escapeHtml((parseFloat(v)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}));
+  if(k==='source') return v==='invoice' ? '🧾 Invoice' : '✍️ Manual';
+  if(k==='bank') return escapeHtml(v || (row && row.currentAccName) || '');
+  return escapeHtml(cellText(v));
+}
+const statusBadge = s => `<span class="px-2 py-0.5 rounded-full text-[11px] font-semibold ${({'Completed':'bg-emerald-100 text-emerald-700','In Progress':'bg-blue-100 text-blue-700','Delayed':'bg-red-100 text-red-700','On Hold':'bg-amber-100 text-amber-700'}[s])||'bg-slate-100 text-slate-600'}">${escapeHtml(s||'Not Started')}</span>`;
 
 function renderNav(){
-  const nav = document.getElementById('nav');
-  nav.innerHTML = NAV.map(n=>`
-    <div class="nav-item ${route.section===n.key?'active':''}" onclick="goTo('${n.key}')">
-      <span class="dot"></span>${esc(n.label)}
-    </div>`).join('');
+  let last = '';
+  navList.innerHTML = MODULES.filter(m => !m.hidden).map(m => {
+    let head = '';
+    if(m.group && m.group !== last){ last = m.group; head = `<div class="text-[10px] font-bold uppercase text-slate-400 px-2 pt-4 pb-1">${escapeHtml(m.group)}</div>`; }
+    return head + `<button onclick="go('${m.id}')" class="nav-btn w-full text-left px-3 py-2 rounded-lg hover:bg-slate-100 ${m.id===active?'active':''}">${escapeHtml(m.label)}</button>`;
+  }).join('')
+    + `<div class="text-[10px] font-bold uppercase text-slate-400 px-2 pt-4 pb-1">Settings</div><button onclick="go('appearance')" class="nav-btn w-full text-left px-3 py-2 rounded-lg hover:bg-slate-100 ${active==='appearance'?'active':''}">🎨 Appearance</button>`;
+}
+function go(id){ active = id; editIdx = null; renderNav(); renderView(); }
+
+function renderView(){
+  if(active==='appearance'){ view.innerHTML = '<div class="mb-4"><h2 class="text-2xl font-bold text-slate-800">🎨 Appearance</h2><p class="text-sm text-slate-500">Sidebar colour, text colour, font and font size.</p></div><div data-acacia-appearance></div>'; return; }
+  const m = MODULES.find(x => x.id===active);
+  if(m.id==='plans') return renderPlans(m);
+  return renderLinked(m);
 }
 
-function goTo(section, params){
-  route = {section, params: params||{}};
-  renderNav();
-  render();
+/* ---- Plan Hub dashboard (KPIs, plan cards, portfolio, progress, actions, activity) ---- */
+function planDash(){
+  const A = ADX, C = A.C, ps = plansList().filter(Boolean), today = todayStr();
+  const prog = p => Math.max(0, Math.min(100, parseFloat(p.progress)||0));
+  const late = p => p.endDate && p.endDate < today && p.status !== 'Completed';
+  const done = ps.filter(p=>p.status==='Completed'), delayed = ps.filter(late);
+  const running = ps.filter(p=>p.status==='In Progress');
+  const avg = ps.length ? Math.round(ps.reduce((s,p)=>s+prog(p),0)/ps.length) : 0;
+  const upd = (store.progress||[]).filter(r=>r && r.date && !isNaN(new Date(r.date)));
+  const ms = A.months(6), byM = {};
+  upd.forEach(r=>{ const d = new Date(r.date), k = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); (byM[k] = byM[k]||[]).push(parseFloat(r.progress)||0); });
+  const trend = ms.map(m=>({l:m.l, v: byM[m.k] ? Math.round(byM[m.k].reduce((a,b)=>a+b,0)/byM[m.k].length) : null}));
+  let last = 0; trend.forEach(t=>{ if(t.v==null) t.v = last; else last = t.v; });
+  const acts = (store.actions||[]).filter(r=>r && r.due && r.status!=='Completed').sort((a,b)=>String(a.due).localeCompare(String(b.due))).slice(0,4);
+  const recent = [...upd].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,4);
+  const team = t => { const o = (store.ownership||[]).filter(r=>r && r.planTitle===t); return o.reduce((n,r)=>n+(Array.isArray(r.team)?r.team.length:0),0) || o.length; };
+  const idx = p => plansList().indexOf(p);
+  const cards = ps.slice(0,6).map(p=>`<div class="adx-plan"><h4>${escapeHtml(p.title)}</h4><p>${escapeHtml(p.department||p.goalType||'Plan')}</p>${A.hb('Progress', prog(p))}<div class="m"><span>Due: ${escapeHtml(p.endDate||'not set')}</span><span>${team(p.title)} team</span></div><div style="text-align:right;margin-top:6px"><button class="adx-btn" onclick="openPlan(${idx(p)})">View Plan</button></div></div>`).join('');
+  const rev = ps.filter(p=>parseFloat(p.targetAmount)>0).slice(0,5);
+  return `<div class="adx-wrap" style="margin-bottom:6px">
+  <div class="adx-grid adx-g4">
+    ${A.kpi({i:'file',l:'Total Plans',v:ps.length,d:`<div class="adx-d fl">${running.length} in progress</div>`})}
+    ${A.kpi({i:'folder',c:'b',l:'Active Plans',v:running.length})}
+    ${A.kpi({i:'check',c:'o',l:'Completed Plans',v:done.length})}
+    ${A.kpi({i:'clock',c:'p',l:'Average Progress',v:avg+'%',d:`<div class="adx-d ${delayed.length?'dn':'fl'}">${delayed.length} past due date</div>`})}
+  </div>
+  <div class="adx-grid adx-g21">
+    ${A.panel('Your Plans', ps.length ? `<div class="adx-plans">${cards}</div>` : '<div class="adx-empty">No plans yet. Click <b>+ New Plan</b> to create your first plan, or create one in Acacia Books.</div>', {i:'file'})}
+    <div style="display:flex;flex-direction:column;gap:14px;min-width:0">
+      ${A.panel('Plan Portfolio', ps.length ? A.donut([{v:running.length-delayed.filter(p=>p.status==='In Progress').length,c:C.g,l:'On Track'},{v:delayed.length,c:C.o,l:'Delayed'},{v:done.length,c:C.b,l:'Completed'},{v:ps.length-running.length-done.length-delayed.filter(p=>p.status!=='In Progress').length,c:C.gl,l:'Not started'}].map(x=>({...x,v:Math.max(0,x.v)})), ps.length, 'Plans') : '<div class="adx-empty">No plans yet.</div>', {i:'chart'})}
+      ${A.panel('Plan Progress', A.line(trend, {pct:true, max:100}), {i:'trend'})}
+    </div>
+  </div>
+  <div class="adx-grid adx-g111">
+    ${A.panel('Upcoming Actions', acts.length ? acts.map(a=>A.row('check', `${escapeHtml(a.item||'')}<div style="font-size:11.5px;color:var(--ax-mut)">${escapeHtml(a.title||'')}</div>`, escapeHtml(a.due), "go('actions')")).join('') : '<div class="adx-empty">No open action items.</div>', {i:'clock', link:['View all',"go('actions')"]})}
+    ${A.panel('Recent Activities', recent.length ? recent.map(r=>A.row('', `Progress ${escapeHtml(r.progress)}% on <b>${escapeHtml(r.title||'')}</b>`, escapeHtml(r.person||''), "go('progress')")).join('') : '<div class="adx-empty">Progress updates will show here.</div>', {i:'trend'})}
+    ${A.panel('Revenue vs Target', rev.length ? rev.map(p=>{ const t = parseFloat(p.targetAmount)||1; return A.hb(p.title, collected(p.title)/t*100, 'KES '+A.short(collected(p.title))+' / '+A.short(t)); }).join('') : '<div class="adx-empty">Set a target amount on a plan to track revenue.</div>', {i:'cash', link:['Revenue',"go('revenue')"]})}
+  </div>
+  </div>`;
 }
 
-/* =========================================================
-   Generic modal form handling
-========================================================= */
-let modalCtx = null; // {entityKey, recordId, presetFields}
+/* ---- Plan Hub: create plans + All Plans ---- */
+function renderPlans(m){
+  const ps = plansList();
+  const done = ps.filter(p => p.status==='Completed').length;
+  const run = ps.filter(p => p.status==='In Progress').length;
+  const target = ps.reduce((s,p)=>s+(parseFloat(p.targetAmount)||0),0);
+  const got = ps.reduce((s,p)=>s+collected(p.title),0);
+  view.innerHTML = `
+    <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+      <div><h2 class="text-2xl font-bold text-slate-800">🗂️ Plan Hub</h2>
+        <p class="text-sm text-slate-500">Create plans and track them from start to finish · same plans as Acacia Books</p></div>
+      <div class="flex gap-2">
+        <input id="planSearch" oninput="filterPlans()" placeholder="Search plans…" class="h-9 px-3 text-sm border border-slate-200 rounded-lg outline-none"/>
+        <button onclick="exportCsv()" class="px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Export CSV</button>
+        <button onclick="openForm()" class="px-4 py-2 text-sm bg-acacia-600 hover:bg-acacia-700 text-white rounded-lg font-semibold">+ New Plan</button>
+      </div>
+    </div>
+    ${planDash()}
+    <h3 class="font-bold mb-2" style="font-family:var(--ax-serif);font-size:18px">All Plans</h3>
+    <div class="bg-white rounded-xl border border-slate-200 overflow-hidden"><div class="overflow-x-auto">
+      <table class="w-full text-sm"><thead class="bg-slate-50 text-left text-xs uppercase text-slate-500"><tr>
+        <th class="px-3 py-2">Plan</th><th class="px-3 py-2">Department</th><th class="px-3 py-2">Goal</th><th class="px-3 py-2">Priority</th>
+        <th class="px-3 py-2">Dates</th><th class="px-3 py-2 text-right">Target</th><th class="px-3 py-2 text-right">Collected</th>
+        <th class="px-3 py-2">Progress</th><th class="px-3 py-2">Status</th><th class="px-3 py-2">Owner</th><th class="px-3 py-2"></th></tr></thead>
+        <tbody id="plansBody"></tbody></table></div></div>`;
+  filterPlans();
+}
+function filterPlans(){
+  const q = ((document.getElementById('planSearch')||{}).value||'').toLowerCase();
+  const rows = plansList().map((p,i)=>({p,i})).filter(x => x.p && (!q || JSON.stringify(x.p).toLowerCase().includes(q)));
+  const body = document.getElementById('plansBody'); if(!body) return;
+  body.innerHTML = rows.length ? rows.map(({p,i}) => {
+    const pct = Math.max(0,Math.min(100,parseFloat(p.progress)||0));
+    return `<tr class="border-t border-slate-100 hover:bg-slate-50 align-top">
+      <td class="px-3 py-2 font-semibold">${escapeHtml(p.title)}</td><td class="px-3 py-2">${escapeHtml(p.department||'')}</td>
+      <td class="px-3 py-2">${escapeHtml(p.goalType||'')}</td><td class="px-3 py-2">${escapeHtml(p.priority||'')}</td>
+      <td class="px-3 py-2 whitespace-nowrap">${escapeHtml(p.startDate||'?')} → ${escapeHtml(p.endDate||'?')}</td>
+      <td class="px-3 py-2 text-right">${cell('targetAmount',p.targetAmount)}</td><td class="px-3 py-2 text-right">${cell('amount',collected(p.title))}</td>
+      <td class="px-3 py-2 min-w-[110px]"><div class="h-2 bg-slate-100 rounded-full overflow-hidden"><div class="h-2 bg-acacia-600" style="width:${pct}%"></div></div><div class="text-[11px] text-slate-500 mt-1">${pct}%</div></td>
+      <td class="px-3 py-2">${statusBadge(p.status)}</td><td class="px-3 py-2">${escapeHtml(p.owner||'')}</td>
+      <td class="px-3 py-2 acx-cell">${ACX_ACT({view:`openPlan('${i}')`, edit:`openForm(${i})`, clone:`cloneRow(${i})`, del:`delRow(${i})`, title:'Plan — '+(p.title||'')})}</td></tr>`;
+  }).join('') : `<tr><td colspan="11" class="text-center text-slate-400 py-10">No plans yet. Click <b>+ New Plan</b> to create your first plan, or create one in Acacia Books.</td></tr>`;
+}
+function openPlan(i){ const p = plansList()[i]; if(p){ selPlan = p.title; go('ownership'); } }
 
-function openEntityModal(entityKey, recordId, presetFields){
-  const schema = ENTITIES[entityKey];
-  const record = recordId ? state[entityKey].find(r=>r.id===recordId) : Object.assign({}, presetFields||{});
-  modalCtx = {entityKey, recordId, record: Object.assign({}, record)};
-
-  document.getElementById('modalTitle').textContent = (recordId? 'Edit ':'New ') + schema.label;
-  const body = document.getElementById('modalBody');
-  body.innerHTML = schema.fields.map(f=>renderField(f, modalCtx.record)).join('');
-  document.getElementById('modalSaveBtn').onclick = saveEntityModal;
-  document.getElementById('modalSaveBtn').style.display = '';
-  document.getElementById('modalOverlay').classList.add('open');
+/* ---- Plan Progress / Revenue sub-modules (always for one chosen plan) ---- */
+function renderLinked(m){
+  const ps = plansList(), plan = curPlan();
+  if(!plan){
+    view.innerHTML = `<h2 class="text-2xl font-bold text-slate-800 mb-2">${escapeHtml(m.label)}</h2>
+      <div class="bg-white rounded-xl border border-slate-200 p-10 text-center text-slate-500">Create a plan first in the <b>Plan Hub</b>.<br><button onclick="go('plans')" class="mt-4 px-4 py-2 text-sm bg-acacia-600 hover:bg-acacia-700 text-white rounded-lg font-semibold">Go to Plan Hub</button></div>`;
+    return;
+  }
+  const rows = (store[m.id]||[]).map((r,i)=>({r,i})).filter(x => x.r && x.r[m.link]===plan.title);
+  const cols = COLS[m.id];
+  let extra = '';
+  if(m.id==='revenue'){
+    const got = collected(plan.title), tgt = parseFloat(plan.targetAmount)||0, pct = tgt ? Math.min(100,Math.round(got/tgt*100)) : 0;
+    extra = `<div class="bg-white rounded-xl border border-slate-200 p-4 mb-4 grid md:grid-cols-3 gap-4">
+      <div><div class="text-[11px] uppercase font-semibold text-slate-400">Collected</div><div class="text-lg font-bold">${fmtKES(got)}</div></div>
+      <div><div class="text-[11px] uppercase font-semibold text-slate-400">Target</div><div class="text-lg font-bold">${tgt?fmtKES(tgt):'—'}</div></div>
+      <div><div class="text-[11px] uppercase font-semibold text-slate-400">Achieved</div><div class="text-lg font-bold">${tgt?pct+'%':'—'}</div><div class="h-2 bg-slate-100 rounded-full mt-1 overflow-hidden"><div class="h-2 bg-emerald-500" style="width:${pct}%"></div></div></div></div>`;
+  }
+  if(m.id==='expenses'){
+    const tot = rows.reduce((s,x)=>s+(parseFloat(x.r.amount)||0),0);
+    extra = `<div class="bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-lg px-3 py-2 mb-4">Plan expenses are recorded as Operational Costs in Acacia Books so they post to your bank and ledger. They show here for this plan. Total: <b>${fmtKES(tot)}</b></div>`;
+  }
+  view.innerHTML = `
+    <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+      <div><h2 class="text-2xl font-bold text-slate-800">${escapeHtml(m.label)}</h2>
+        <p class="text-sm text-slate-500">${rows.length} record${rows.length===1?'':'s'} for this plan · live from Acacia Books</p></div>
+      <div class="flex gap-2 items-center">
+        <select onchange="setPlan(this.value)" class="h-9 px-3 text-sm border border-slate-200 rounded-lg bg-white max-w-[260px]">
+          ${ps.map(p=>`<option value="${escapeHtml(p.title)}" ${p.title===plan.title?'selected':''}>${escapeHtml(p.title)}</option>`).join('')}</select>
+        <button onclick="exportCsv()" class="px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Export CSV</button>
+        ${m.readonly?'':`<button onclick="openForm()" class="px-4 py-2 text-sm bg-acacia-600 hover:bg-acacia-700 text-white rounded-lg font-semibold">+ New</button>`}
+      </div>
+    </div>
+    <div class="text-xs text-slate-500 mb-3">${escapeHtml(plan.startDate||'?')} → ${escapeHtml(plan.endDate||'?')} · ${statusBadge(plan.status)} · progress ${parseFloat(plan.progress)||0}%${plan.owner?' · owner '+escapeHtml(plan.owner):''}</div>
+    ${extra}
+    <div class="bg-white rounded-xl border border-slate-200 overflow-hidden"><div class="overflow-x-auto">
+      <table class="w-full text-sm"><thead class="bg-slate-50 text-left text-xs uppercase text-slate-500"><tr>
+        ${cols.map(c=>`<th class="px-3 py-2 ${c[0]==='amount'?'text-right':''}">${escapeHtml(c[1])}</th>`).join('')}<th class="px-3 py-2 acx-cell">Actions</th></tr></thead>
+        <tbody>${rows.length ? rows.map(({r,i}) => `<tr class="border-t border-slate-100 hover:bg-slate-50 align-top">
+          ${cols.map(c=>`<td class="px-3 py-2 max-w-xs ${c[0]==='amount'?'text-right':''}">${c[0]==='status'?statusBadge(r[c[0]]):cell(c[0],r[c[0]],r)}</td>`).join('')}
+          <td class="px-3 py-2 acx-cell">${m.readonly||m.id==='revenue' ? ACX_ACT({del: m.readonly?'':`delRow(${i})`}) : ACX_ACT({edit:`openForm(${i})`, clone:`cloneRow(${i})`, del:`delRow(${i})`})}</td></tr>`).join('')
+          : `<tr><td colspan="${cols.length+1}" class="text-center text-slate-400 py-10">${m.readonly?'No expenses logged against this plan yet.':'No records for this plan yet. Click <b>+ New</b> to add one.'}</td></tr>`}</tbody></table></div></div>`;
 }
 
-/* Preview: read-only view of a record (Save button hidden) */
-function previewRecord(entityKey, id){
-  const schema = ENTITIES[entityKey];
-  const rec = state[entityKey].find(r=>r.id===id);
-  if(!rec) return;
-  modalCtx = null;
-  document.getElementById('modalTitle').textContent = 'Preview ' + schema.label;
-  const show = (f)=>{
-    let v = rec[f.key];
-    if(v===undefined || v==='' || v===null) return '—';
-    if(f.key==='projectId'){ const pr = state.projects.find(x=>x.id===v); return pr ? pr.name : v; }
-    if(f.type==='select' && typeof f.options!=='function' && Array.isArray(f.options)){
-      const o = f.options.find(o=> (typeof o==='string'? o : o.value)===v);
-      if(o && typeof o!=='string') return o.label;
+/* ---- Add / edit form (modal) ---- */
+function openForm(i){
+  const m = MODULES.find(x => x.id===active); if(m.readonly) return;
+  editIdx = (i===undefined) ? null : i;
+  const old = editIdx!==null ? (store[m.id]||[])[editIdx] : null;
+  const names = empNames();
+  entryModalTitle.textContent = (old ? 'Edit ' : 'Add ') + (m.id==='plans' ? 'Plan' : m.label);
+  const cls = 'w-full px-3 rounded-lg border border-slate-300 outline-none text-sm focus:border-acacia-500 focus:ring-1 focus:ring-acacia-500';
+  entryModalFields.innerHTML = FIELDS[m.id].map(f => {
+    const v = old ? old[f.k] : (f.k==='date' ? todayStr() : (f.k==='status' ? 'Not Started' : (f.k==='priority' ? 'Medium' : '')));
+    let input;
+    if(f.t==='select'){
+      let opts = f.o==='employees' ? ['', ...names] : f.o;
+      if(v && !opts.includes(v)) opts = [...opts, v];
+      input = `<select data-field="${f.k}" class="${cls} h-10 bg-white">${opts.map(o=>`<option value="${escapeHtml(o)}" ${o===v?'selected':''}>${o===''?'-- Select --':escapeHtml(o)}</option>`).join('')}</select>`;
+    } else if(f.t==='multi'){
+      const sel = Array.isArray(v) ? v : [];
+      input = `<select data-field="${f.k}" multiple size="4" class="${cls} bg-white py-1">${names.map(o=>`<option value="${escapeHtml(o)}" ${sel.includes(o)?'selected':''}>${escapeHtml(o)}</option>`).join('')}</select>${names.length?'<p class="text-[11px] text-slate-400 mt-1">Hold Ctrl / Cmd to pick several.</p>':'<p class="text-[11px] text-slate-400 mt-1">Add employees in Acacia Books to pick a team.</p>'}`;
+    } else if(f.t==='textarea'){
+      input = `<textarea data-field="${f.k}" rows="3" class="${cls} py-2">${escapeHtml(v||'')}</textarea>`;
+    } else {
+      const lock = (m.id==='plans' && f.k==='title' && old) ? 'readonly title="The title links this plan\'s records, so it cannot be changed."' : '';
+      input = `<input data-field="${f.k}" type="${f.t||'text'}" ${f.t==='number'?'step="any" min="0"'+(f.k==='progress'?' max="100"':''):''} ${f.req?'required':''} ${lock} value="${escapeHtml(v==null?'':v)}" class="${cls} h-10 ${lock?'bg-slate-50':''}"/>`;
     }
-    return v;
-  };
-  document.getElementById('modalBody').innerHTML =
-    '<div class="field-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px 18px">' +
-    schema.fields.map(f=>`<div style="${f.type==='textarea'?'grid-column:1/-1;':''}"><div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#6b7280;margin-bottom:2px">${esc(f.label)}</div><div style="white-space:pre-wrap">${esc(show(f))}</div></div>`).join('') +
-    '</div>';
-  document.getElementById('modalSaveBtn').style.display = 'none';
-  document.getElementById('modalOverlay').classList.add('open');
+    return `<div><label class="block text-xs font-semibold text-slate-600 mb-1">${escapeHtml(f.l)}</label>${input}</div>`;
+  }).join('');
+  entryModal.classList.remove('hidden');
 }
+function closeEntryModal(){ entryModal.classList.add('hidden'); entryModalForm.reset(); editIdx = null; }
 
-/* Clone: copy a record with a new id; name/title gets "(Copy)", project code is regenerated */
-function cloneRecord(entityKey, id){
-  const schema = ENTITIES[entityKey];
-  const rec = state[entityKey].find(r=>r.id===id);
-  if(!rec) return;
-  const copy = JSON.parse(JSON.stringify(rec));
-  copy.id = uid(entityKey);
-  copy.createdAt = todayISO();
-  ['name','title'].forEach(k=>{ if(typeof copy[k]==='string' && copy[k]) copy[k] = copy[k] + ' (Copy)'; });
-  if(entityKey==='projects') copy.code = '';
-  if(schema.beforeSave) schema.beforeSave(copy);
-  state[entityKey].push(copy);
-  saveState();
-  toast(schema.label + ' cloned.');
-  render();
-}
-
-function renderField(f, record){
-  const val = record[f.key]!==undefined ? record[f.key] : '';
-  const id = 'f_'+f.key;
-  if(f.type==='select'){
-    const opts = typeof f.options==='function'? f.options() : (f.options||[]);
-    const normalized = opts.map(o=> typeof o==='string' ? {value:o,label:o} : o);
-    return `<div class="field"><label>${esc(f.label)}${f.required?' *':''}</label>
-      <select id="${id}" data-key="${f.key}">
-        <option value="">— Select —</option>
-        ${normalized.map(o=>`<option value="${esc(o.value)}" ${String(val)===String(o.value)?'selected':''}>${esc(o.label)}</option>`).join('')}
-      </select></div>`;
-  }
-  if(f.type==='textarea'){
-    return `<div class="field"><label>${esc(f.label)}</label><textarea id="${id}" data-key="${f.key}" placeholder="${esc(f.placeholder||'')}">${esc(val)}</textarea></div>`;
-  }
-  return `<div class="field"><label>${esc(f.label)}${f.required?' *':''}</label>
-    <input id="${id}" data-key="${f.key}" type="${f.type}" value="${esc(val)}" placeholder="${esc(f.placeholder||'')}" ${f.min!==undefined?`min="${f.min}"`:''} ${f.max!==undefined?`max="${f.max}"`:''}>
-  </div>`;
-}
-
-function saveEntityModal(){
-  const {entityKey, recordId, record} = modalCtx;
-  const schema = ENTITIES[entityKey];
-  const body = document.getElementById('modalBody');
-  const inputs = body.querySelectorAll('[data-key]');
-  const draft = Object.assign({}, record);
-  let missingRequired = false;
-  inputs.forEach(inp=>{
-    draft[inp.dataset.key] = inp.value;
+async function saveNewRecord(e){
+  e.preventDefault();
+  const m = MODULES.find(x => x.id===active), fields = FIELDS[m.id], rec = {};
+  fields.forEach(f => {
+    const el = entryModalFields.querySelector(`[data-field="${f.k}"]`); if(!el) return;
+    if(f.t==='multi') rec[f.k] = [...el.selectedOptions].map(o => o.value);
+    else if(f.t==='number') rec[f.k] = el.value==='' ? 0 : (parseFloat(el.value)||0);
+    else rec[f.k] = el.value.trim();
   });
-  schema.fields.forEach(f=>{
-    if(f.required && !draft[f.key]){ missingRequired = true; }
-  });
-  if(missingRequired){ toast('Please fill required fields.'); return; }
-  if(schema.beforeSave) schema.beforeSave(draft);
+  const rows = [...(store[m.id]||[])], old = editIdx!==null ? rows[editIdx] : null;
+  let plan = null, touchPlans = false;
 
-  if(recordId){
-    const idx = state[entityKey].findIndex(r=>r.id===recordId);
-    state[entityKey][idx] = Object.assign(state[entityKey][idx], draft);
+  if(m.id==='plans'){
+    if(!rec.title) return alert('Please enter a plan title.');
+    if(!old && plansList().some(p => p.title===rec.title)) return alert('A plan with this title already exists.');
+    if(old) rows[editIdx] = Object.assign({}, old, rec, { title: old.title });
+    else rows.push(Object.assign({ progress:0, status:'Not Started', owner:'', team:[], dateCreated:nowStr() }, rec));
+    if(!old) selPlan = rec.title;
   } else {
-    draft.id = uid(entityKey);
-    draft.createdAt = todayISO();
-    state[entityKey].push(draft);
+    plan = curPlan(); if(!plan) return alert('Create/select a plan first.');
+    rec[m.link] = plan.title;
+    if(m.id==='ownership'){ rec.date = rec.date || todayStr(); Object.assign(plan,{owner:rec.owner,team:rec.team,status:rec.status}); touchPlans = true; }
+    if(m.id==='progress'){ rec.progress = Math.max(0,Math.min(100,rec.progress)); rec.date = nowStr(); Object.assign(plan,{progress:rec.progress,status:rec.status}); touchPlans = true; }
+    if(m.id==='revisions'){ rec.date = nowStr(); if(/^Extend/.test(rec.action) && rec.newEndDate){ plan.endDate = rec.newEndDate; touchPlans = true; } }
+    if(m.id==='actions'){ rec.date = old ? old.date : nowStr(); }
+    if(m.id==='revenue'){
+      if(rec.amount<=0) return alert('Enter an amount greater than zero.');
+      Object.assign(rec,{ id:Date.now()+Math.random(), source:'manual', invoiceNumber:'', invDate:'', date:nowStr() });
+    }
+    if(old) rows[editIdx] = Object.assign({}, old, rec); else rows.push(rec);
   }
-  saveState();
-  closeModal();
-  toast(schema.label + (recordId? ' updated' : ' created') + '.');
-  render();
+  store[m.id] = rows;
+  if(m.id==='revenue') touchPlans = syncRevenueProgress(plan) || touchPlans;
+  closeEntryModal();
+
+  let ok = await pushOne(m);
+  if(ok && touchPlans) ok = await pushOne(MODULES[0]);
+  if(ok) renderView(); else await Promise.all([pullOne(m), pullOne(MODULES[0])]).then(renderView);
 }
 
-function closeModal(){
-  document.getElementById('modalOverlay').classList.remove('open');
-  const sb = document.getElementById('modalSaveBtn'); if(sb) sb.style.display = '';
-  modalCtx = null;
+/* Books' rule: when a target amount is set, progress follows revenue collected */
+function syncRevenueProgress(plan){
+  if(!plan) return false;
+  const got = collected(plan.title), tgt = parseFloat(plan.targetAmount)||0;
+  if(tgt<=0) return false;
+  plan.progress = Math.min(100, Math.round(got/tgt*100));
+  plan.status = plan.progress>=100 ? 'Completed' : plan.progress>0 ? 'In Progress' : plan.status;
+  return true;
 }
 
-function deleteRecord(entityKey, id){
-  if(!confirm('Delete this ' + ENTITIES[entityKey].label.toLowerCase() + '? This cannot be undone.')) return;
-  state[entityKey] = state[entityKey].filter(r=>r.id!==id);
-  saveState();
-  toast(ENTITIES[entityKey].label + ' deleted.');
-  render();
+/* Clone — same as Books: copy the record, plans get a unique "(copy)" title */
+async function cloneRow(i){
+  const m = MODULES.find(x => x.id===active); if(!m || m.readonly || m.id==='revenue') return;
+  const src = (store[m.id]||[])[i]; if(!src) return;
+  const copy = JSON.parse(JSON.stringify(src));
+  if(m.id==='plans'){
+    let t = (src.title||'Plan')+' (copy)', n = 2;
+    while(plansList().some(p => p.title===t)) t = (src.title||'Plan')+' (copy '+(n++)+')';
+    Object.assign(copy,{ title:t, progress:0, status:'Not Started', dateCreated:nowStr() });
+  } else { copy.date = nowStr(); delete copy.id; }
+  store[m.id] = [...(store[m.id]||[]), copy];
+  if(await pushOne(m)) renderView(); else await pullOne(m).then(renderView);
+}
+async function delRow(i){
+  const m = MODULES.find(x => x.id===active); if(m.readonly) return;
+  const msg = m.id==='plans' ? 'Delete this plan? Records already linked to it (progress, revenue, etc.) are kept in Acacia Books.' : 'Delete this record from Acacia Books?';
+  if(!confirm(msg)) return;
+  store[m.id].splice(i,1);
+  let touch = false;
+  if(m.id==='revenue') touch = syncRevenueProgress(curPlan());
+  let ok = await pushOne(m);
+  if(ok && touch) ok = await pushOne(MODULES[0]);
+  if(ok) renderView(); else await Promise.all([pullOne(m), pullOne(MODULES[0])]).then(renderView);
 }
 
-/* =========================================================
-   Generic table renderer
-========================================================= */
-const COLUMN_LABELS = {
-  name:'Name', code:'Code', client:'Client', manager:'Manager', status:'Status', priority:'Priority',
-  progress:'Progress', projectId:'Project', assignee:'Assignee', dueDate:'Due Date', responsible:'Responsible',
-  completion:'Completion', role:'Role', email:'Email', phone:'Phone', date:'Date', taskId:'Task',
-  person:'Person', hours:'Hours', category:'Category', uploadedBy:'Uploaded By', title:'Issue',
-  reportedBy:'Reported By', assignedTo:'Assigned To'
-};
-
-function cellValue(entityKey, col, rec){
-  if(col==='projectId') return projectName(rec.projectId);
-  if(col==='assignee' || col==='responsible' || col==='person' || col==='uploadedBy' || col==='reportedBy' || col==='assignedTo' || col==='manager') return memberName(rec[col]) === '—' ? (rec[col]||'—') : memberName(rec[col]);
-  if(col==='taskId'){ const t = state.tasks.find(t=>t.id===rec.taskId); return t? t.name : '—'; }
-  if(col==='status') return `<span class="badge status-${esc((rec.status||'').replace(/ /g,'.'))}">${esc(rec.status||'—')}</span>`;
-  if(col==='priority') return `<span class="badge priority-${esc(rec.priority||'')}">${esc(rec.priority||'—')}</span>`;
-  if(col==='progress' || col==='completion'){
-    const v = Number(rec[col])||0;
-    return `<div class="progress-row" style="min-width:120px"><div class="progress-track"><div class="progress-fill" style="width:${v}%"></div></div><span class="pct">${v}%</span></div>`;
+function exportCsv(){
+  const m = MODULES.find(x => x.id===active);
+  let head, lines;
+  if(m.id==='plans'){
+    head = FIELDS.plans.map(f=>f.k).concat(['progress','status','owner']);
+    lines = plansList().map(p => head.map(c => JSON.stringify(cellText(p[c]))).join(','));
+  } else {
+    const plan = curPlan(); if(!plan) return;
+    const cols = COLS[m.id].map(c=>c[0]);
+    head = cols;
+    lines = (store[m.id]||[]).filter(r => r && r[m.link]===plan.title).map(r => cols.map(c => JSON.stringify(cellText(r[c]))).join(','));
   }
-  if(col==='dueDate' || col==='date') return fmtDate(rec[col]);
-  if(col==='hours') return (rec.hours||0)+' h';
-  return esc(rec[col]===undefined? '—' : (rec[col]===''? '—' : rec[col]));
+  const a = document.createElement('a'); a.href = 'data:text/csv,' + encodeURIComponent([head.join(','), ...lines].join('\n')); a.download = m.key + '.csv'; a.click();
 }
 
-function renderEntityTable(entityKey, records, opts){
-  opts = opts || {};
-  const schema = ENTITIES[entityKey];
-  const cols = opts.columns || schema.columns;
-  if(!records.length){
-    return `<div class="empty-state">
-      <div class="title">No ${schema.labelPlural.toLowerCase()} yet</div>
-      <div>Create your first ${schema.label.toLowerCase()} to get started.</div>
-      <button class="btn primary" onclick="openEntityModal('${entityKey}', null, ${opts.preset? JSON.stringify(opts.preset).replace(/"/g,'&quot;') : 'null'})">+ New ${esc(schema.label)}</button>
-    </div>`;
-  }
-  return `<table>
-    <thead><tr>${cols.map(c=>`<th>${COLUMN_LABELS[c]||c}</th>`).join('')}<th></th></tr></thead>
-    <tbody>
-      ${records.map(rec=>`
-        <tr onclick="handleRowClick(event,'${entityKey}','${rec.id}')">
-          ${cols.map(c=>`<td>${cellValue(entityKey,c,rec)}</td>`).join('')}
-          <td class="row-actions acx-cell">${ACX_ACT({view:`previewRecord('${entityKey}','${rec.id}')`, edit:`openEntityModal('${entityKey}','${rec.id}')`, clone:`cloneRecord('${entityKey}','${rec.id}')`, del:`deleteRecord('${entityKey}','${rec.id}')`})}</td>
-        </tr>`).join('')}
-    </tbody>
-  </table>`;
+/* ============ Acacia Mail bridge ============ */
+const MAIL_DATA_PREFIX = 'acacia_data_';
+function openMail(){ mmStatus.textContent=''; mmTo.value=''; mmSubject.value=''; mmBody.value=''; mailModal.classList.remove('hidden'); }
+function closeMail(){ mailModal.classList.add('hidden'); }
+function loadMailbox(email){
+  try{ return JSON.parse(localStorage.getItem(MAIL_DATA_PREFIX+email)) || {mails:[],events:[],aiChat:[]}; }
+  catch{ return {mails:[],events:[],aiChat:[]}; }
 }
-
-function handleRowClick(e, entityKey, id){
-  if(entityKey==='projects'){ goTo('projectDetail', {id}); }
+function saveMailbox(email, box){
+  localStorage.setItem(MAIL_DATA_PREFIX+email, JSON.stringify(box));
+  try{ sb.from('app_state').upsert({ key: MAIL_DATA_PREFIX+email, value: box, updated_at:new Date().toISOString() }, { onConflict:'key' }); }catch(e){}
 }
-
-/* =========================================================
-   Section renderers
-========================================================= */
-function setHeader(eyebrow, title, actionsHtml){
-  document.getElementById('pageEyebrow').textContent = eyebrow;
-  document.getElementById('pageTitle').textContent = title;
-  document.getElementById('topActions').innerHTML = actionsHtml || '';
-}
-
-function render(){
-  const c = document.getElementById('content');
-  const sec = route.section;
-  if(sec==='dashboard') return renderDashboard(c);
-  if(sec==='projects') return renderProjectsList(c);
-  if(sec==='projectDetail') return renderProjectDetail(c, route.params.id);
-  if(sec==='tasks') return renderSimpleEntity(c,'tasks','Planning','Tasks');
-  if(sec==='milestones') return renderMilestonesSection(c);
-  if(sec==='calendar') return renderCalendar(c);
-  if(sec==='team') return renderSimpleEntity(c,'team','People','Team');
-  if(sec==='timeEntries') return renderTimeTracking(c);
-  if(sec==='budgets') return renderBudgets(c);
-  if(sec==='documents') return renderSimpleEntity(c,'documents','Files','Documents');
-  if(sec==='issues') return renderSimpleEntity(c,'issues','Tracking','Issues');
-  if(sec==='reports') return renderReports(c);
-  if(sec==='settings') return renderSettings(c);
-}
-
-/* ---------- Dashboard ---------- */
-
-/* Plans report on the dashboard: mirrors Books > Reports > Advanced Plans Report (all plans combined, then each plan with % done and % remaining) */
-function plansReportHtml(P){
-  const bd=booksData(), PL=bd.plans||[], PU=bd.progress||[], OW=bd.owners||[], RV=bd.revisions||[];
-  const head='<div class="panel"><div class="panel-head"><h3>Plans (from Books)</h3></div><div class="panel-body">';
-  if(!PL.length) return head+'<div class="empty-state" style="padding:20px;"><div>No plans from Books yet. They appear here once the Books company has plans.</div></div></div></div>';
-  const newest=(arr,t)=>arr.filter(x=>(x.title||x.planTitle)===t).sort((a,b)=>new Date(b.date||0)-new Date(a.date||0))[0];
-  const rows=PL.map(pl=>{
-    const u=newest(PU,pl.title), r=newest(RV,pl.title), own=OW.filter(o=>o.planTitle===pl.title);
-    let prog=Number(u?u.progress:pl.progress)||0; prog=Math.max(0,Math.min(100,prog));
-    return {pl,prog,rem:100-prog,owner:own.map(o=>o.owner).filter(Boolean).join(', '),team:own.reduce((a,o)=>a.concat(o.team||[]),[]).join(', '),rev:r};
-  });
-  const n=rows.length, cnt=s=>PL.filter(p=>p.status===s).length;
-  const avg=Math.round(rows.reduce((t,r)=>t+r.prog,0)/n), card=(v,l,c)=>'<div class="stat-card '+(c||'')+'"><div class="num">'+v+'</div><div class="lbl">'+l+'</div></div>';
-  const bar=(p,c)=>'<div style="display:flex;align-items:center;gap:6px;min-width:110px"><div class="progress-track" style="flex:1"><div class="progress-fill" style="width:'+p+'%;'+(c?'background:'+c:'')+'"></div></div><span class="pct">'+p+'%</span></div>';
-  return head+
-   '<div class="stat-grid" style="margin-bottom:14px">'+card(n,'Total Plans')+card(cnt('Completed'),'Completed','gold')+card(cnt('In Progress'),'In Progress')+card(cnt('On Hold'),'On Hold','warn')+card(avg+'%','Combined Progress','gold')+card((100-avg)+'%','Combined Remaining to Complete',(100-avg)?'warn':'')+'</div>'+
-   '<div style="overflow-x:auto"><table class="data-table" style="width:100%"><thead><tr><th>Period</th><th>Plan</th><th>Department</th><th>Goal</th><th>Priority</th><th>Status</th><th>Linked budget</th><th>Done</th><th>Remaining</th><th>Owner</th><th>Team</th><th>Latest revision</th><th>Projects</th></tr></thead><tbody>'+
-   rows.map(r=>{ const p=r.pl, lp=P.filter(x=>x.planTitle===p.title).map(x=>esc(x.name)).join(', ')||'—';
-     return '<tr><td>'+esc((p.startDate||'')+(p.endDate?' → '+p.endDate:''))+'</td><td>'+esc(p.title)+'</td><td>'+esc(p.department||'—')+'</td><td>'+esc(p.goalType||'—')+'</td><td>'+esc(p.priority||'—')+'</td><td>'+esc(p.status||'—')+'</td><td>'+esc(p.linkedBudget||'—')+'</td><td>'+bar(r.prog)+'</td><td>'+bar(r.rem,'#b45309')+'</td><td>'+esc(r.owner||'—')+'</td><td>'+esc(r.team||'—')+'</td><td>'+(r.rev?esc((r.rev.action||'')+(r.rev.comment?' — '+r.rev.comment:'')+(r.rev.date?' ('+r.rev.date+')':'')):'—')+'</td><td>'+lp+'</td></tr>'; }).join('')+
-   '</tbody></table></div></div></div>';
-}
-function renderDashboard(c){
-  setHeader('Overview','Dashboard', `<button class="btn primary" onclick="openEntityModal('projects')">+ New Project</button>`);
-  const P = state.projects, T = state.tasks;
-  const today = todayISO();
-  const active = P.filter(p=>p.status==='In Progress'||p.status==='Not Started'||p.status==='Planning').length;
-  const completed = P.filter(p=>p.status==='Completed').length;
-  const overdue = P.filter(p=>p.endDate && p.endDate<today && p.status!=='Completed' && p.status!=='Cancelled').length;
-  const tasksDueToday = T.filter(t=>t.dueDate===today && t.status!=='Completed').length;
-  const tasksOverdue = T.filter(t=>t.dueDate && t.dueDate<today && t.status!=='Completed').length;
-  const totalBudget = P.reduce((s,p)=>s+(Number(p.budget)||0),0);
-  const actualCost = P.reduce((s,p)=>s+(Number(p.actualCost)||0),0);
-  const overallProgress = P.length? Math.round(P.reduce((s,p)=>s+(Number(p.progress)||0),0)/P.length) : 0;
-
-  const stats = [
-    {n:P.length, l:'Total Projects'},
-    {n:active, l:'Active Projects'},
-    {n:completed, l:'Completed Projects', cls:'gold'},
-    {n:overdue, l:'Overdue Projects', cls:overdue?'danger':''},
-    {n:tasksDueToday, l:'Tasks Due Today', cls:tasksDueToday?'warn':''},
-    {n:tasksOverdue, l:'Tasks Overdue', cls:tasksOverdue?'danger':''},
-    {n:fmtMoney(totalBudget), l:'Total Project Budget'},
-    {n:fmtMoney(actualCost), l:'Actual Project Cost'},
-    {n:overallProgress+'%', l:'Overall Project Progress', cls:'gold'},
-  ];
-
-  const upcoming = T.filter(t=>t.dueDate && t.status!=='Completed').sort((a,b)=>a.dueDate.localeCompare(b.dueDate)).slice(0,6);
-  const recent = [...P].slice(-5).reverse();
-  const myTasks = T.slice(-6).reverse();
-  const statusCounts = {};
-  state.settings.projectStatuses.forEach(s=>statusCounts[s]=0);
-  P.forEach(p=>{ if(statusCounts[p.status]!==undefined) statusCounts[p.status]++; });
-
-  c.innerHTML = `
-    <div class="stat-grid">
-      ${stats.map(s=>`<div class="stat-card ${s.cls||''}"><div class="num">${s.n}</div><div class="lbl">${s.l}</div></div>`).join('')}
-    </div>
-
-    <div class="two-col">
-      <div class="panel">
-        <div class="panel-head"><h3>Project Status Summary</h3></div>
-        <div class="panel-body">
-          ${P.length===0? `<div class="empty-state"><div class="title">No projects yet</div><div>Add a project to see status breakdown here.</div></div>` :
-          Object.entries(statusCounts).map(([s,n])=>`
-            <div class="progress-row" style="margin-bottom:10px;">
-              <div style="width:110px;font-size:13.5px;">${esc(s)}</div>
-              <div class="progress-track"><div class="progress-fill" style="width:${P.length? (n/P.length*100):0}%"></div></div>
-              <span class="pct">${n}</span>
-            </div>`).join('')}
-        </div>
-      </div>
-      <div class="panel">
-        <div class="panel-head"><h3>Upcoming Deadlines</h3></div>
-        <div class="panel-body">
-          ${upcoming.length===0? `<div class="empty-state" style="padding:20px;"><div>No upcoming task deadlines.</div></div>` :
-            upcoming.map(t=>`<div class="kv" style="grid-template-columns:1fr auto;margin-bottom:8px;">
-              <div>${esc(t.name)} <span class="muted">— ${esc(projectName(t.projectId))}</span></div>
-              <div class="muted">${fmtDate(t.dueDate)}</div>
-            </div>`).join('')}
-        </div>
-      </div>
-    </div>
-
-    <div class="two-col">
-      <div class="panel">
-        <div class="panel-head"><h3>Recent Activity</h3></div>
-        <div class="panel-body">
-          ${recent.length===0? `<div class="empty-state" style="padding:20px;"><div>No activity recorded yet.</div></div>` :
-          recent.map(p=>`<div class="kv" style="grid-template-columns:1fr auto;margin-bottom:8px;">
-              <div>Project <b>${esc(p.name)}</b> ${p.recordId? '' : 'created'}</div>
-              <div class="muted">${fmtDate(p.createdAt)}</div>
-            </div>`).join('')}
-        </div>
-      </div>
-      <div class="panel">
-        <div class="panel-head"><h3>My Tasks</h3></div>
-        <div class="panel-body">
-          ${myTasks.length===0? `<div class="empty-state" style="padding:20px;"><div>No tasks yet.</div></div>` :
-          myTasks.map(t=>`<div class="kv" style="grid-template-columns:1fr auto;margin-bottom:8px;">
-              <div>${esc(t.name)} <span class="muted">— ${esc(memberName(t.assignee))}</span></div>
-              <div><span class="badge status-${esc((t.status||'').replace(/ /g,'.'))}">${esc(t.status||'—')}</span></div>
-            </div>`).join('')}
-        </div>
-      </div>
-    </div>
-
-    ${plansReportHtml(P)}
-
-    <div class="panel">
-      <div class="panel-head"><h3>Project Progress</h3></div>
-      <div class="panel-body">
-        ${P.length===0? `<div class="empty-state"><div class="title">No projects to chart</div><div>Progress bars will appear here once projects are created.</div></div>` :
-          P.map(p=>`<div style="margin-bottom:12px;">
-            <div class="progress-row"><div style="width:200px;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.name)}</div>
-            <div class="progress-track"><div class="progress-fill" style="width:${p.progress||0}%"></div></div>
-            <span class="pct">${p.progress||0}%</span></div>
-          </div>`).join('')}
-      </div>
-    </div>
-  `;
-}
-
-/* ---------- Projects list ---------- */
-function renderProjectsList(c){
-  setHeader('Portfolio','Projects', `<button class="btn primary" onclick="openEntityModal('projects')">+ New Project</button>`);
-  const P = state.projects;
-  const groups = [
-    {label:'All Projects', filter:p=>true},
-    {label:'Active', filter:p=>['Planning','Not Started','In Progress'].includes(p.status)},
-    {label:'Completed', filter:p=>p.status==='Completed'},
-    {label:'Archived', filter:p=>p.status==='Cancelled'},
-  ];
-  const activeGroup = route.params.group || 'All Projects';
-  const group = groups.find(g=>g.label===activeGroup) || groups[0];
-  const filtered = P.filter(group.filter);
-
-  c.innerHTML = `
-    <div class="tabs">
-      ${groups.map(g=>`<div class="tab ${g.label===activeGroup?'active':''}" onclick="goTo('projects',{group:'${esc(g.label)}'})">${esc(g.label)}</div>`).join('')}
-    </div>
-    <div class="panel"><div class="panel-body">
-      ${renderEntityTable('projects', filtered)}
-    </div></div>
-  `;
-}
-
-/* ---------- Project detail ---------- */
-function renderProjectDetail(c, id){
-  const p = state.projects.find(p=>p.id===id);
-  if(!p){ setHeader('Projects','Not found',''); c.innerHTML = `<div class="empty-state"><div class="title">Project not found</div><button class="btn" onclick="goTo('projects')">Back to Projects</button></div>`; return; }
-
-  setHeader('Project', p.name, `<button class="btn" onclick="goTo('projects')">← All Projects</button> <button class="btn primary" onclick="openEntityModal('projects','${p.id}')">Edit Project</button>`);
-
-  const tab = route.params.tab || 'Overview';
-  const tabs = ['Overview','Tasks','Timeline','Budget','Team','Files','Issues','Activity'];
-  const projTasks = state.tasks.filter(t=>t.projectId===p.id);
-  const projIssues = state.issues.filter(i=>i.projectId===p.id);
-  const projDocs = state.documents.filter(d=>d.projectId===p.id);
-  const projMilestones = state.milestones.filter(m=>m.projectId===p.id);
-  const projTime = state.timeEntries.filter(t=>t.projectId===p.id);
-  const completedTasks = projTasks.filter(t=>t.status==='Completed').length;
-
-  let body = '';
-  if(tab==='Overview'){
-    body = `
-      <div class="progress-row" style="margin-bottom:20px;">
-        <div class="progress-track" style="height:12px;"><div class="progress-fill" style="width:${p.progress||0}%"></div></div>
-        <span class="pct">${p.progress||0}%</span>
-      </div>
-      <div class="two-col">
-        <div class="panel"><div class="panel-head"><h3>Details</h3></div><div class="panel-body kv">
-          <div>Client</div><div>${esc(p.client||'—')}</div>
-          <div>Project Manager</div><div>${esc(memberName(p.manager))}</div>
-          <div>Status</div><div><span class="badge status-${esc((p.status||'').replace(/ /g,'.'))}">${esc(p.status||'—')}</span></div>
-          <div>Priority</div><div><span class="badge priority-${esc(p.priority||'')}">${esc(p.priority||'—')}</span></div>
-          <div>Start Date</div><div>${fmtDate(p.startDate)}</div>
-          <div>End Date</div><div>${fmtDate(p.endDate)}</div>
-          <div>Budget</div><div>${fmtMoney(p.budget)}</div>
-          <div>Actual Cost</div><div>${fmtMoney(p.actualCost)}</div>
-          <div>Tasks</div><div>${projTasks.length}</div>
-          <div>Completed</div><div>${completedTasks}</div>
-        </div></div>
-        <div class="panel"><div class="panel-head"><h3>Description</h3></div><div class="panel-body">
-          ${p.description? `<div>${esc(p.description)}</div>` : `<div class="muted">No description added.</div>`}
-        </div></div>
-      </div>
-    `;
-  } else if(tab==='Tasks'){
-    body = `<div class="panel"><div class="panel-head"><h3>Tasks</h3><button class="btn small primary" onclick="openEntityModal('tasks',null,{projectId:'${p.id}'})">+ New Task</button></div>
-      <div class="panel-body">${renderEntityTable('tasks', projTasks, {columns:['name','assignee','status','priority','dueDate'], preset:{projectId:p.id}})}</div></div>`;
-  } else if(tab==='Timeline'){
-    body = renderGanttPanel(projTasks, projMilestones, p);
-  } else if(tab==='Budget'){
-    body = renderProjectBudgetPanel(p);
-  } else if(tab==='Team'){
-    const memberIds = new Set(projTasks.map(t=>t.assignee).filter(Boolean));
-    if(p.manager) memberIds.add(p.manager);
-    const members = state.team.filter(t=>memberIds.has(t.id));
-    body = `<div class="panel"><div class="panel-head"><h3>Team on this Project</h3></div><div class="panel-body">
-      ${members.length===0? `<div class="empty-state"><div>No team members linked yet — assign tasks or a project manager.</div></div>` :
-        `<table><thead><tr><th>Name</th><th>Role</th><th>Assigned Tasks</th><th>Task Completion</th></tr></thead><tbody>
-          ${members.map(m=>{
-            const mt = projTasks.filter(t=>t.assignee===m.id);
-            const done = mt.filter(t=>t.status==='Completed').length;
-            const pct = mt.length? Math.round(done/mt.length*100) : 0;
-            return `<tr><td>${esc(m.name)}</td><td>${esc(m.role||'—')}</td><td>${mt.length}</td><td>
-              <div class="progress-row"><div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div><span class="pct">${pct}%</span></div>
-            </td></tr>`;
-          }).join('')}
-        </tbody></table>`}
-    </div></div>`;
-  } else if(tab==='Files'){
-    body = `<div class="panel"><div class="panel-head"><h3>Documents</h3><button class="btn small primary" onclick="openEntityModal('documents',null,{projectId:'${p.id}'})">+ New Document</button></div>
-      <div class="panel-body">${renderEntityTable('documents', projDocs, {columns:['name','category','uploadedBy','date'], preset:{projectId:p.id}})}</div></div>`;
-  } else if(tab==='Issues'){
-    body = `<div class="panel"><div class="panel-head"><h3>Issues</h3><button class="btn small primary" onclick="openEntityModal('issues',null,{projectId:'${p.id}'})">+ New Issue</button></div>
-      <div class="panel-body">${renderEntityTable('issues', projIssues, {columns:['title','assignedTo','priority','status','dueDate'], preset:{projectId:p.id}})}</div></div>`;
-  } else if(tab==='Activity'){
-    const events = [];
-    projTasks.forEach(t=>events.push({date:t.createdAt, text:`Task "${t.name}" added (${t.status})`}));
-    projIssues.forEach(i=>events.push({date:i.createdAt, text:`Issue "${i.title}" logged (${i.status})`}));
-    projDocs.forEach(d=>events.push({date:d.createdAt, text:`Document "${d.name}" attached`}));
-    projTime.forEach(te=>events.push({date:te.createdAt, text:`${te.hours||0}h logged by ${memberName(te.person)}`}));
-    events.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-    body = `<div class="panel"><div class="panel-head"><h3>Activity</h3></div><div class="panel-body">
-      ${events.length===0? `<div class="empty-state"><div>No activity recorded on this project yet.</div></div>` :
-      events.map(e=>`<div class="kv" style="grid-template-columns:110px 1fr;margin-bottom:8px;"><div class="muted">${fmtDate(e.date)}</div><div>${esc(e.text)}</div></div>`).join('')}
-    </div></div>`;
-  }
-
-  c.innerHTML = `
-    <div class="tabs">${tabs.map(t=>`<div class="tab ${t===tab?'active':''}" onclick="goTo('projectDetail',{id:'${p.id}',tab:'${t}'})">${t}</div>`).join('')}</div>
-    ${body}
-  `;
-}
-
-/* ---------- Generic simple entity section (tasks/team/documents/issues) ---------- */
-function renderSimpleEntity(c, entityKey, eyebrow, title){
-  const schema = ENTITIES[entityKey];
-  setHeader(eyebrow, title, `<button class="btn primary" onclick="openEntityModal('${entityKey}')">+ New ${esc(schema.label)}</button>`);
-
-  let filterHtml = '';
-  let records = state[entityKey];
-  const projFilter = route.params.projectId;
-  const statusFilter = route.params.status;
-
-  if(entityKey==='tasks' || entityKey==='issues'){
-    const statusList = entityKey==='tasks'? state.settings.taskStatuses : state.settings.issueStatuses;
-    filterHtml = `
-      <div class="tabs">
-        <div class="tab ${!statusFilter?'active':''}" onclick="goTo('${entityKey}',{})">All</div>
-        ${statusList.map(s=>`<div class="tab ${statusFilter===s?'active':''}" onclick="goTo('${entityKey}',{status:'${s}'})">${esc(s)}</div>`).join('')}
-      </div>`;
-    if(statusFilter) records = records.filter(r=>r.status===statusFilter);
-  }
-  if(projFilter) records = records.filter(r=>r.projectId===projFilter);
-
-  c.innerHTML = `
-    ${filterHtml}
-    <div class="panel"><div class="panel-body">${renderEntityTable(entityKey, records)}</div></div>
-  `;
-}
-
-/* ---------- Milestones ---------- */
-function renderMilestonesSection(c){
-  setHeader('Stages','Milestones', `<button class="btn primary" onclick="openEntityModal('milestones')">+ New Milestone</button>`);
-  const byProject = {};
-  state.milestones.forEach(m=>{
-    byProject[m.projectId] = byProject[m.projectId] || [];
-    byProject[m.projectId].push(m);
-  });
-  const projectIds = Object.keys(byProject);
-
-  if(state.milestones.length===0){
-    document.getElementById('content').innerHTML = renderEntityTable('milestones', []);
+async function sendMailFromApp(e){
+  e.preventDefault();
+  const u = currentUser();
+  if(!u){ mmStatus.textContent='Sign in first.'; return; }
+  const to = mmTo.value.trim().toLowerCase();
+  const subject = mmSubject.value.trim();
+  const bodyText = mmBody.value.trim();
+  if(!to||!subject||!bodyText) return;
+  mmStatus.textContent = 'Verifying recipient…';
+  const recipient = (await accountExists(to)) ? { email: to } : null;
+  if(!recipient){
+    mmStatus.textContent = '❌ No Acacia account uses that email. The message was not sent.';
     return;
   }
+  const bodyHtml = escapeHtml(bodyText).replace(/\n/g,'<br>');
+  const now = Date.now();
+  const mailId = 'm'+now;
 
-  c.innerHTML = projectIds.map(pid=>{
-    const ms = byProject[pid].sort((a,b)=>(a.dueDate||'').localeCompare(b.dueDate||''));
-    return `<div class="panel">
-      <div class="panel-head"><h3>${esc(projectName(pid))}</h3></div>
-      <div class="panel-body">
-        <div class="pill-list" style="margin-bottom:16px;">
-          ${ms.map(m=>{
-            const symbol = m.status==='Completed'? '✓' : (m.status==='In Progress'? '●' : '○');
-            return `<span class="pill" title="${esc(m.status)}">${symbol} ${esc(m.name)}</span>`;
-          }).join('')}
-        </div>
-        ${renderEntityTable('milestones', ms, {columns:['name','dueDate','responsible','status','completion']})}
-      </div>
-    </div>`;
-  }).join('');
-}
-
-/* ---------- Calendar ---------- */
-let calCursor = new Date();
-function renderCalendar(c){
-  setHeader('Schedule','Calendar', `
-    <button class="btn" onclick="calCursor.setMonth(calCursor.getMonth()-1);render()">‹ Prev</button>
-    <button class="btn" onclick="calCursor.setMonth(calCursor.getMonth()+1);render()">Next ›</button>
-  `);
-  const year = calCursor.getFullYear(), month = calCursor.getMonth();
-  const first = new Date(year, month, 1);
-  const startDay = first.getDay();
-  const daysInMonth = new Date(year, month+1, 0).getDate();
-  const daysInPrevMonth = new Date(year, month, 0).getDate();
-
-  const items = [];
-  state.tasks.forEach(t=>{ if(t.dueDate) items.push({date:t.dueDate, label:t.name, type:'task'}); });
-  state.milestones.forEach(m=>{ if(m.dueDate) items.push({date:m.dueDate, label:m.name, type:'milestone'}); });
-
-  let cells = '';
-  for(let i=0;i<startDay;i++){
-    const d = daysInPrevMonth-startDay+i+1;
-    cells += `<div class="cal-cell other"><div class="d">${d}</div></div>`;
-  }
-  for(let d=1; d<=daysInMonth; d++){
-    const iso = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    const dayItems = items.filter(it=>it.date===iso);
-    cells += `<div class="cal-cell"><div class="d">${d}</div>${dayItems.map(it=>`<div class="cal-item ${it.type==='milestone'?'milestone':''}">${esc(it.label)}</div>`).join('')}</div>`;
-  }
-  const totalCells = startDay+daysInMonth;
-  const trailing = (7 - (totalCells % 7)) % 7;
-  for(let i=1;i<=trailing;i++){
-    cells += `<div class="cal-cell other"><div class="d">${i}</div></div>`;
-  }
-
-  document.getElementById('pageTitle').textContent = calCursor.toLocaleDateString('en-GB',{month:'long', year:'numeric'});
-
-  c.innerHTML = `
-    <div class="cal-head-row">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d=>`<div>${d}</div>`).join('')}</div>
-    <div class="cal-grid">${cells}</div>
-  `;
-}
-
-/* ---------- Time tracking ---------- */
-function renderTimeTracking(c){
-  setHeader('Timesheets','Time Tracking', `<button class="btn primary" onclick="openEntityModal('timeEntries')">+ New Entry</button>`);
-  const entries = [...state.timeEntries].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-
-  const byTask = {};
-  state.timeEntries.forEach(e=>{
-    if(!e.taskId) return;
-    byTask[e.taskId] = (byTask[e.taskId]||0) + (Number(e.hours)||0);
+  const inbox = loadMailbox(recipient.email);
+  inbox.mails = inbox.mails || [];
+  inbox.mails.unshift({
+    id: mailId,
+    from: u.name || u.email,
+    email: u.email,
+    to: recipient.email,
+    subject, preview: bodyText.slice(0,90), body: bodyHtml,
+    time: now, read: false, starred: false, folder: 'inbox'
   });
+  saveMailbox(recipient.email, inbox);
 
-  const comparisonRows = state.tasks.filter(t=>t.estHours || byTask[t.id]).map(t=>{
-    const actual = byTask[t.id] || Number(t.actualHours) || 0;
-    const est = Number(t.estHours)||0;
-    const diff = actual-est;
-    return `<tr><td>${esc(t.name)}</td><td>${esc(projectName(t.projectId))}</td><td>${est} h</td><td>${actual.toFixed(1)} h</td>
-      <td style="color:${diff>0?'var(--danger)':'var(--success)'}">${diff>0?'+':''}${diff.toFixed(1)} h</td></tr>`;
-  }).join('');
+  const sent = loadMailbox(u.email);
+  sent.mails = sent.mails || [];
+  sent.mails.unshift({
+    id: mailId+'_s',
+    from: u.name || u.email,
+    email: recipient.email,
+    to: recipient.email,
+    subject, preview: bodyText.slice(0,90), body: bodyHtml,
+    time: now, read: true, starred: false, folder: 'sent'
+  });
+  saveMailbox(u.email, sent);
 
-  c.innerHTML = `
-    <div class="panel"><div class="panel-head"><h3>Logged Time</h3></div>
-      <div class="panel-body">${renderEntityTable('timeEntries', entries)}</div></div>
-    <div class="panel"><div class="panel-head"><h3>Estimated vs Actual Hours</h3></div>
-      <div class="panel-body">
-        ${comparisonRows? `<table><thead><tr><th>Task</th><th>Project</th><th>Estimated</th><th>Actual</th><th>Variance</th></tr></thead><tbody>${comparisonRows}</tbody></table>`
-        : `<div class="empty-state"><div>No estimated or logged hours yet.</div></div>`}
-      </div></div>
-  `;
+  mmStatus.textContent = '✅ Sent to '+recipient.email+' — will appear in their Acacia Mail inbox.';
+  setTimeout(closeMail, 1200);
 }
 
-/* ---------- Budgets ---------- */
-function renderBudgetsBase(c){
-  setHeader('Finance','Budgets', `<button class="btn primary" onclick="openEntityModal('projects')">+ New Project</button>`);
-  const P = state.projects;
-  if(P.length===0){
-    c.innerHTML = `<div class="empty-state"><div class="title">No project budgets yet</div><div>Add a project with a budget to track it here.</div></div>`;
-    return;
-  }
-  const totalBudget = P.reduce((s,p)=>s+(Number(p.budget)||0),0);
-  const totalActual = P.reduce((s,p)=>s+(Number(p.actualCost)||0),0);
-
-  c.innerHTML = `
-    <div class="stat-grid">
-      <div class="stat-card"><div class="num">${fmtMoney(totalBudget)}</div><div class="lbl">Total Budget (all projects)</div></div>
-      <div class="stat-card ${totalActual>totalBudget?'danger':''}"><div class="num">${fmtMoney(totalActual)}</div><div class="lbl">Total Actual Cost</div></div>
-      <div class="stat-card gold"><div class="num">${fmtMoney(totalBudget-totalActual)}</div><div class="lbl">Remaining</div></div>
-    </div>
-    ${P.map(p=>projectBudgetCard(p)).join('')}
-  `;
+function boot(){
+  let u=currentUser();
+  if(u && !AcaciaCloud.isCloudId(u.companyId)){ localStorage.removeItem(SESSION_KEY); u=null; }
+  if(u){ AcaciaCloud.start({companyId:u.companyId, email:u.email, role:'admin'}).then(function(r){ if(String(r).indexOf('blocked:')===0){ alert(String(r).slice(8)); signOut(); } }).catch(function(){}); }
+  if(!u){hpShowHome();app.classList.add('hidden');app.classList.remove('flex');return}
+  hpHideHome();authScreen.classList.add('hidden');app.classList.remove('hidden');app.classList.add('flex');
+  userAvatar.textContent=initials(u.companyName||u.name||u.email);userAvatar.title=(u.companyName||'')+' · '+(u.email||'');
+  
+  // Display right sidebar once logged in
+  document.getElementById('rightSidebar')?.classList.remove('hidden');
+  
+  renderNav(); renderView(); pullAll();
 }
-function projectBudgetCard(p){
-  const budget = Number(p.budget)||0, actual = Number(p.actualCost)||0;
-  const remaining = budget-actual;
-  return `<div class="panel">
-    <div class="panel-head"><h3>${esc(p.name)}</h3><button class="btn small" onclick="goTo('projectDetail',{id:'${p.id}',tab:'Budget'})">View Detail</button></div>
-    <div class="panel-body kv">
-      <div>Budget</div><div>${fmtMoney(budget)}</div>
-      <div>Actual Cost</div><div>${fmtMoney(actual)}</div>
-      <div>Remaining</div><div style="color:${remaining<0?'var(--danger)':'var(--success)'}">${fmtMoney(remaining)}</div>
-    </div>
-  </div>`;
-}
-function renderProjectBudgetPanel(p){
-  const budget = Number(p.budget)||0, actual = Number(p.actualCost)||0, remaining = budget-actual;
-  const labour = Number(p.labourCost)||0, materials = Number(p.materialsCost)||0, services = Number(p.servicesCost)||0, other = Number(p.otherCost)||0;
-  const breakdownTotal = labour+materials+services+other || 1;
-  const rows = [['Labour',labour],['Materials',materials],['Services',services],['Other',other]];
-  return `<div class="two-col">
-    <div class="panel"><div class="panel-head"><h3>Project Budget</h3></div>
-      <div class="panel-body kv">
-        <div>Original Budget</div><div>${fmtMoney(budget)}</div>
-        <div>Actual Cost</div><div>${fmtMoney(actual)}</div>
-        <div>Remaining Budget</div><div style="color:${remaining<0?'var(--danger)':'var(--success)'}">${fmtMoney(remaining)}</div>
-      </div>
-    </div>
-    <div class="panel"><div class="panel-head"><h3>Cost Breakdown</h3></div>
-      <div class="panel-body">
-        ${rows.map(([label,val])=>`<div class="progress-row" style="margin-bottom:10px;">
-          <div style="width:90px;font-size:13.5px;">${label}</div>
-          <div class="progress-track"><div class="progress-fill" style="width:${val/breakdownTotal*100}%"></div></div>
-          <span class="pct">${fmtMoney(val)}</span>
-        </div>`).join('')}
-      </div>
-    </div>
-  </div>`;
-}
-
-/* ---------- Gantt ---------- */
-function renderGanttPanel(tasks, milestones, project){
-  const items = [];
-  tasks.forEach(t=>{ if(t.startDate && t.dueDate) items.push({label:t.name, start:t.startDate, end:t.dueDate, type:'task'}); });
-  milestones.forEach(m=>{ if(m.dueDate) items.push({label:m.name, start:m.dueDate, end:m.dueDate, type:'milestone'}); });
-  if(project && project.startDate && project.endDate && items.length===0){
-    items.push({label:project.name, start:project.startDate, end:project.endDate, type:'task'});
-  }
-  if(items.length===0){
-    return `<div class="panel"><div class="panel-body"><div class="empty-state"><div class="title">No timeline data yet</div><div>Add tasks or milestones with dates to see the timeline.</div></div></div></div>`;
-  }
-  const allDates = items.flatMap(i=>[new Date(i.start), new Date(i.end)]);
-  let minDate = new Date(Math.min(...allDates));
-  let maxDate = new Date(Math.max(...allDates));
-  minDate = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
-  maxDate = new Date(maxDate.getFullYear(), maxDate.getMonth()+1, 0);
-  const totalDays = Math.max(1, daysDiff(minDate, maxDate));
-
-  const monthCount = (maxDate.getFullYear()-minDate.getFullYear())*12 + (maxDate.getMonth()-minDate.getMonth()) + 1;
-  const months = [];
-  for(let i=0;i<monthCount;i++){
-    const md = new Date(minDate.getFullYear(), minDate.getMonth()+i, 1);
-    months.push(md.toLocaleDateString('en-GB',{month:'short'}));
-  }
-
-  const rows = items.map(it=>{
-    const startOffset = daysDiff(minDate, it.start)/totalDays*100;
-    const width = it.type==='milestone'? 1.6 : Math.max(1.6, daysDiff(it.start, it.end)/totalDays*100);
-    return `<div class="gantt-row">
-      <div class="gantt-label" title="${esc(it.label)}">${esc(it.label)}</div>
-      <div class="gantt-track"><div class="gantt-bar ${it.type==='milestone'?'milestone':''}" style="left:${startOffset}%;width:${width}%" title="${esc(it.label)}: ${fmtDate(it.start)} – ${fmtDate(it.end)}"></div></div>
-    </div>`;
-  }).join('');
-
-  return `<div class="panel"><div class="panel-head"><h3>Timeline</h3></div>
-    <div class="panel-body">
-      <div class="gantt-wrap">
-        <div class="gantt-grid">
-          <div class="gantt-header">${months.map(m=>`<div class="gantt-month">${m}</div>`).join('')}</div>
-          ${rows}
-        </div>
-      </div>
-    </div>
-  </div>`;
-}
-
-/* ---------- Reports ---------- */
-const REPORT_DEFS = [
-  {key:'summary', label:'Project Summary'},
-  {key:'progress', label:'Project Progress'},
-  {key:'profitability', label:'Project Profitability'},
-  {key:'budgetVsActual', label:'Budget vs Actual'},
-  {key:'taskReport', label:'Task Report'},
-  {key:'overdueTasks', label:'Overdue Tasks'},
-  {key:'teamWorkload', label:'Team Workload'},
-  {key:'timeTracking', label:'Time Tracking Report'},
-  {key:'milestoneReport', label:'Milestone Report'},
-  {key:'costReport', label:'Project Cost Report'},
-  {key:'performance', label:'Project Performance'},
-  {key:'issuesReport', label:'Issues Report'},
-  {key:'completedProjects', label:'Completed Projects'},
-  {key:'delayedProjects', label:'Delayed Projects'},
-];
-
-function renderReports(c){
-  setHeader('Insights','Project Reports','');
-  const active = route.params.report || 'summary';
-  c.innerHTML = `
-    <div class="two-col" style="grid-template-columns:220px 1fr;">
-      <div class="panel"><div class="panel-body" style="padding:8px;">
-        ${REPORT_DEFS.map(r=>`<div class="nav-item" style="color:var(--ink);${active===r.key?'background:var(--primary-soft);border-left:3px solid var(--gold);':''}" onclick="goTo('reports',{report:'${r.key}'})">${esc(r.label)}</div>`).join('')}
-      </div></div>
-      <div class="panel"><div class="panel-head"><h3>${esc(REPORT_DEFS.find(r=>r.key===active).label)}</h3></div>
-        <div class="panel-body">${buildReport(active)}</div></div>
-    </div>
-  `;
-}
-
-function buildReport(key){
-  const P = state.projects, T = state.tasks, I = state.issues, M = state.milestones;
-  const today = todayISO();
-  const emptyMsg = (what)=>`<div class="empty-state"><div>No ${what} to report on yet.</div></div>`;
-
-  if(key==='summary'){
-    if(!P.length) return emptyMsg('projects');
-    return `<table><thead><tr><th>Project</th><th>Client</th><th>Status</th><th>Progress</th><th>Budget</th><th>Actual</th></tr></thead><tbody>
-      ${P.map(p=>`<tr><td>${esc(p.name)}</td><td>${esc(p.client||'—')}</td><td>${esc(p.status||'—')}</td><td>${p.progress||0}%</td><td>${fmtMoney(p.budget)}</td><td>${fmtMoney(p.actualCost)}</td></tr>`).join('')}
-    </tbody></table>`;
-  }
-  if(key==='progress'){
-    if(!P.length) return emptyMsg('projects');
-    return P.map(p=>`<div style="margin-bottom:12px;"><div class="progress-row"><div style="width:200px;">${esc(p.name)}</div><div class="progress-track"><div class="progress-fill" style="width:${p.progress||0}%"></div></div><span class="pct">${p.progress||0}%</span></div></div>`).join('');
-  }
-  if(key==='profitability'){
-    if(!P.length) return emptyMsg('projects');
-    return `<table><thead><tr><th>Project</th><th>Budget</th><th>Actual Cost</th><th>Margin</th></tr></thead><tbody>
-      ${P.map(p=>{const b=Number(p.budget)||0,a=Number(p.actualCost)||0,m=b-a;return `<tr><td>${esc(p.name)}</td><td>${fmtMoney(b)}</td><td>${fmtMoney(a)}</td><td style="color:${m<0?'var(--danger)':'var(--success)'}">${fmtMoney(m)}</td></tr>`;}).join('')}
-    </tbody></table>`;
-  }
-  if(key==='budgetVsActual'){
-    if(!P.length) return emptyMsg('projects');
-    return `<table><thead><tr><th>Project</th><th>Budget</th><th>Actual</th><th>Variance %</th></tr></thead><tbody>
-      ${P.map(p=>{const b=Number(p.budget)||0,a=Number(p.actualCost)||0;const v=b? ((a-b)/b*100):0;return `<tr><td>${esc(p.name)}</td><td>${fmtMoney(b)}</td><td>${fmtMoney(a)}</td><td style="color:${v>0?'var(--danger)':'var(--success)'}">${v.toFixed(1)}%</td></tr>`;}).join('')}
-    </tbody></table>`;
-  }
-  if(key==='taskReport'){
-    if(!T.length) return emptyMsg('tasks');
-    return renderEntityTable('tasks', T);
-  }
-  if(key==='overdueTasks'){
-    const rows = T.filter(t=>t.dueDate && t.dueDate<today && t.status!=='Completed');
-    if(!rows.length) return emptyMsg('overdue tasks');
-    return renderEntityTable('tasks', rows);
-  }
-  if(key==='teamWorkload'){
-    if(!state.team.length) return emptyMsg('team members');
-    return `<table><thead><tr><th>Name</th><th>Assigned Tasks</th><th>Completed</th><th>Total Hours Logged</th></tr></thead><tbody>
-      ${state.team.map(m=>{
-        const mt = T.filter(t=>t.assignee===m.id);
-        const done = mt.filter(t=>t.status==='Completed').length;
-        const hrs = state.timeEntries.filter(e=>e.person===m.id).reduce((s,e)=>s+(Number(e.hours)||0),0);
-        return `<tr><td>${esc(m.name)}</td><td>${mt.length}</td><td>${done}</td><td>${hrs.toFixed(1)} h</td></tr>`;
-      }).join('')}
-    </tbody></table>`;
-  }
-  if(key==='timeTracking'){
-    if(!state.timeEntries.length) return emptyMsg('time entries');
-    return renderEntityTable('timeEntries', state.timeEntries);
-  }
-  if(key==='milestoneReport'){
-    if(!M.length) return emptyMsg('milestones');
-    return renderEntityTable('milestones', M);
-  }
-  if(key==='costReport'){
-    if(!P.length) return emptyMsg('projects');
-    return `<table><thead><tr><th>Project</th><th>Labour</th><th>Materials</th><th>Services</th><th>Other</th><th>Total</th></tr></thead><tbody>
-      ${P.map(p=>{
-        const l=Number(p.labourCost)||0,m=Number(p.materialsCost)||0,s=Number(p.servicesCost)||0,o=Number(p.otherCost)||0;
-        return `<tr><td>${esc(p.name)}</td><td>${fmtMoney(l)}</td><td>${fmtMoney(m)}</td><td>${fmtMoney(s)}</td><td>${fmtMoney(o)}</td><td>${fmtMoney(l+m+s+o)}</td></tr>`;
-      }).join('')}
-    </tbody></table>`;
-  }
-  if(key==='performance'){
-    if(!P.length) return emptyMsg('projects');
-    return `<table><thead><tr><th>Project</th><th>Progress</th><th>On Time?</th><th>Budget Health</th></tr></thead><tbody>
-      ${P.map(p=>{
-        const onTime = !(p.endDate && p.endDate<today && p.status!=='Completed');
-        const healthy = (Number(p.actualCost)||0) <= (Number(p.budget)||0);
-        return `<tr><td>${esc(p.name)}</td><td>${p.progress||0}%</td><td style="color:${onTime?'var(--success)':'var(--danger)'}">${onTime?'On Time':'Behind'}</td><td style="color:${healthy?'var(--success)':'var(--danger)'}">${healthy?'Within Budget':'Over Budget'}</td></tr>`;
-      }).join('')}
-    </tbody></table>`;
-  }
-  if(key==='issuesReport'){
-    if(!I.length) return emptyMsg('issues');
-    return renderEntityTable('issues', I);
-  }
-  if(key==='completedProjects'){
-    const rows = P.filter(p=>p.status==='Completed');
-    if(!rows.length) return emptyMsg('completed projects');
-    return renderEntityTable('projects', rows);
-  }
-  if(key==='delayedProjects'){
-    const rows = P.filter(p=>p.endDate && p.endDate<today && p.status!=='Completed' && p.status!=='Cancelled');
-    if(!rows.length) return emptyMsg('delayed projects');
-    return renderEntityTable('projects', rows);
-  }
-  return '';
-}
-
-/* ---------- Settings ---------- */
-function renderSettings(c){
-  setHeader('Configuration','Settings','');
-  const s = state.settings;
-  const listBlock = (title, key)=>`
-    <div class="settings-block">
-      <h4>${title}</h4>
-      <div class="pill-list" id="list_${key}">
-        ${s[key].map((item,idx)=>`<span class="pill">${esc(item)}<button onclick="removeSettingItem('${key}',${idx})">✕</button></span>`).join('')}
-      </div>
-      <div style="margin-top:10px;display:flex;gap:8px;">
-        <input id="input_${key}" placeholder="Add new..." style="padding:7px 10px;border:1px solid var(--line);border-radius:3px;font-family:Cambria,serif;">
-        <button class="btn small" onclick="addSettingItem('${key}')">+ Add</button>
-      </div>
-    </div>`;
-
-  c.innerHTML = `
-    <div class="panel"><div class="panel-head"><h3>Company Information</h3></div>
-      <div class="panel-body">
-        <div class="field-row">
-          <div class="field"><label>Company Name</label><input id="c_name" value="${esc(s.company.name)}"></div>
-          <div class="field"><label>Currency</label><input id="c_currency" value="${esc(s.company.currency)}"></div>
-        </div>
-        <div class="field-row">
-          <div class="field"><label>Phone</label><input id="c_phone" value="${esc(s.company.phone)}"></div>
-          <div class="field"><label>Email</label><input id="c_email" value="${esc(s.company.email)}"></div>
-        </div>
-        <div class="field"><label>Address</label><input id="c_address" value="${esc(s.company.address)}"></div>
-        <button class="btn primary" onclick="saveCompanyInfo()">Save Company Info</button>
-      </div>
-    </div>
-
-    <div class="panel"><div class="panel-head"><h3>Project Numbering</h3></div>
-      <div class="panel-body field-row">
-        <div class="field"><label>Prefix</label><input id="numPrefix" value="${esc(s.projectNumberingPrefix)}"></div>
-        <div class="field"><label>Next Number</label><input id="numNext" type="number" value="${s.nextProjectNumber}"></div>
-        <div></div>
-        <button class="btn primary" style="height:38px;align-self:end;" onclick="saveNumbering()">Save</button>
-      </div>
-    </div>
-
-    <div class="panel"><div class="panel-head"><h3>Statuses, Priorities &amp; Roles</h3></div>
-      <div class="panel-body">
-        ${listBlock('Project Statuses','projectStatuses')}
-        ${listBlock('Task Statuses','taskStatuses')}
-        ${listBlock('Milestone Statuses','milestoneStatuses')}
-        ${listBlock('Issue Statuses','issueStatuses')}
-        ${listBlock('Priorities','priorities')}
-        ${listBlock('Project Roles','projectRoles')}
-      </div>
-    </div>
-
-    <div class="panel"><div class="panel-head"><h3>Work Hours</h3></div>
-      <div class="panel-body field-row">
-        <div class="field"><label>Standard Work Hours per Day</label><input id="workHours" type="number" value="${s.workHoursPerDay}"></div>
-        <div></div><div></div>
-        <button class="btn primary" style="height:38px;align-self:end;" onclick="saveWorkHours()">Save</button>
-      </div>
-    </div>
-
-    <div class="panel"><div class="panel-head"><h3>Appearance</h3></div>
-      <div class="panel-body"><div data-acacia-appearance></div></div>
-    </div>
-
-    <div class="panel"><div class="panel-head"><h3>Import / Export</h3></div>
-      <div class="panel-body">
-        <p class="muted" style="margin-top:0;">Export all project data as a JSON backup, or import a previously exported file.</p>
-        <div style="display:flex;gap:10px;">
-          <button class="btn" onclick="exportData()">Export Data</button>
-          <button class="btn" onclick="document.getElementById('importFile').click()">Import Data</button>
-          <input type="file" id="importFile" accept="application/json" style="display:none" onchange="importData(event)">
-          <button class="btn danger" onclick="resetAllData()">Reset All Data</button>
-        </div>
-      </div>
-    </div>
-  `;
-}
-function saveCompanyInfo(){
-  state.settings.company = {
-    name: document.getElementById('c_name').value,
-    currency: document.getElementById('c_currency').value || 'KES',
-    phone: document.getElementById('c_phone').value,
-    email: document.getElementById('c_email').value,
-    address: document.getElementById('c_address').value,
-  };
-  saveState(); toast('Company information saved.'); render();
-}
-function saveNumbering(){
-  state.settings.projectNumberingPrefix = document.getElementById('numPrefix').value || 'PRJ-';
-  state.settings.nextProjectNumber = Number(document.getElementById('numNext').value) || 1;
-  saveState(); toast('Numbering settings saved.');
-}
-function saveWorkHours(){
-  state.settings.workHoursPerDay = Number(document.getElementById('workHours').value) || 8;
-  saveState(); toast('Work hours saved.');
-}
-function addSettingItem(key){
-  const input = document.getElementById('input_'+key);
-  const val = input.value.trim();
-  if(!val) return;
-  state.settings[key].push(val);
-  saveState(); render();
-}
-function removeSettingItem(key, idx){
-  state.settings[key].splice(idx,1);
-  saveState(); render();
-}
-function exportData(){
-  const blob = new Blob([JSON.stringify(state, null, 2)], {type:'application/json'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = 'acacia-projects-backup-'+todayISO()+'.json';
-  a.click();
-  URL.revokeObjectURL(url);
-  toast('Data exported.');
-}
-function importData(e){
-  const file = e.target.files[0];
-  if(!file) return;
-  const reader = new FileReader();
-  reader.onload = evt=>{
-    try{
-      const parsed = JSON.parse(evt.target.result);
-      state = Object.assign(freshState(), parsed, {settings: Object.assign(freshState().settings, parsed.settings||{})});
-      saveState();
-      toast('Data imported.');
-      render();
-    }catch(err){ toast('Could not read that file.'); }
-  };
-  reader.readAsText(file);
-  e.target.value = '';
-}
-function resetAllData(){
-  if(!confirm('This will permanently erase all Acacia Projects data on this device. Continue?')) return;
-  state = freshState();
-  saveState();
-  toast('All data cleared.');
-  goTo('dashboard');
-}
-
-/* =========================================================
-   Init
-========================================================= */
-document.getElementById('modalOverlay').addEventListener('click', (e)=>{
-  if(e.target.id==='modalOverlay') closeModal();
-});
-updateThemeToggleIcon();
-/* picking a Plan or Budget fills the project form; everything stays editable */
-document.addEventListener('change', function(e){
-  const t = e.target; if(!t || !t.getAttribute || !modalCtx || modalCtx.entityKey!=='projects') return;
-  const key = t.getAttribute('data-key'); if(key!=='planTitle' && key!=='budgetRef') return;
-  const q = k => document.querySelector('#modalBody [data-key="'+k+'"]');
-  const has = v => v!==undefined && v!==null && v!=='';
-  const setIfEmpty = (k,v)=>{ const el=q(k); if(el && has(v) && !String(el.value||'').trim()) el.value=v; };
-  const setVal = (k,v)=>{ const el=q(k); if(el && has(v)) el.value=v; };
-  if(key==='planTitle'){
-    const p = (booksData().plans||[]).find(x=>x.title===t.value); if(!p) return;
-    const nm = q('name'); if(nm && (!String(nm.value||'').trim() || nm.value===modalCtx._planPicked)) nm.value = p.title;
-    modalCtx._planPicked = p.title;
-    setIfEmpty('description', p.description); setVal('startDate', p.startDate); setVal('endDate', p.endDate);
-    const pr = q('priority'); if(pr && p.priority){ const ok = Array.from(pr.options).find(o=>String(o.value).toLowerCase()===String(p.priority).toLowerCase()); if(ok) pr.value = ok.value; }
-    const b = matchBudgetForPlan(p), br = q('budgetRef');
-    if(b && br && !br.value){ br.value = budgetKey(b); setVal('budget', budgetTotal(b)); }
-  } else {
-    const b = (booksData().budgets||[]).find(x=>budgetKey(x)===t.value); if(b) setVal('budget', budgetTotal(b));
-  }
-});
-
-checkSessionOnLoad();
-
-
-/* ===== Budget module matching Books: Plan Budget Allocation, Record Expenditure, Budget vs Actual Ledger ===== */
-const BD_MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
-const BD_ACCOUNTS=['Salaries & Wages','Materials','Subcontractors','Equipment','Travel','Marketing','Utilities','Professional Fees','Other'];
-let bdSearch='';
-function bdEnsure(){ state.budgetLines=state.budgetLines||[]; state.budgetActuals=state.budgetActuals||[]; }
-function bdTimeframeOpts(period){
-  if(period==='Monthly') return BD_MONTHS.map((m,i)=>`<option value="${m}">${m}</option>`).join('');
-  if(period==='Quarterly') return ['Q1','Q2','Q3','Q4'].map(q=>`<option>${q}</option>`).join('');
-  return '<option value="Full year">Full year</option>';
-}
-function bdPeriodChange(){ document.getElementById('bdTime').innerHTML=bdTimeframeOpts(document.getElementById('bdPeriod').value); }
-function bdLineLabel(l){ return `${l.account} · ${l.department||'General'} · ${l.timeframe} ${l.year}`; }
-function renderBudgets(c){
-  bdEnsure();
-  const tmp=document.createElement('div'); renderBudgetsBase(tmp);
-  const q=bdSearch.toLowerCase();
-  const rows=state.budgetLines.map(l=>{
-    const actual=state.budgetActuals.filter(a=>a.lineId===l.id).reduce((t,a)=>t+Number(a.amount||0),0), budget=Number(l.amount)||0;
-    const used=budget?actual/budget*100:0; return {...l,actual,budget,variance:budget-actual,used,status:used>100?'Over budget':used>=80?'Near limit':'On track'};
-  }).filter(r=>!q||[r.account,r.department,r.period,r.timeframe,r.year,projectName(r.projectId)].join(' ').toLowerCase().includes(q));
-  const tb=rows.reduce((t,r)=>t+r.budget,0), ta=rows.reduce((t,r)=>t+r.actual,0), yr=new Date().getFullYear();
-  const inp='style="width:100%;padding:8px;border:1px solid var(--border,#ddd);border-radius:8px"';
-  const fld=(l,h)=>`<div><label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">${l}</label>${h}</div>`;
-  c.innerHTML=`
-  <div class="stat-grid">
-    <div class="stat-card"><div class="num">${fmtMoney(tb)}</div><div class="lbl">Planned (budget lines)</div></div>
-    <div class="stat-card ${ta>tb?'danger':''}"><div class="num">${fmtMoney(ta)}</div><div class="lbl">Actual Incurred</div></div>
-    <div class="stat-card gold"><div class="num">${fmtMoney(tb-ta)}</div><div class="lbl">Variance (Budget − Actual)</div></div>
-  </div>
-  <div class="two-col">
-    <div class="panel"><div class="panel-head"><h3>1. Plan Budget Allocation</h3></div><div class="panel-body">
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
-        ${fld('Plan (from Plans module)',`<select id="bdPlan" onchange="bdPlanPick()" ${inp}><option value="">— none —</option>${(booksData().plans||[]).map(p=>`<option value="${esc(p.title)}">${esc(p.title)}</option>`).join('')}</select>`)}
-        ${fld('Account Category',`<input id="bdAcc" list="bdAccList" ${inp}><datalist id="bdAccList">${BD_ACCOUNTS.map(a=>`<option>${a}</option>`).join('')}</datalist>`)}
-        ${fld('Department / Business Unit',`<input id="bdDept" ${inp}>`)}
-        ${fld('Project (optional)',`<select id="bdProj" ${inp}><option value="">— none —</option>${state.projects.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select>`)}
-        ${fld('Period Cycle',`<select id="bdPeriod" onchange="bdPeriodChange()" ${inp}><option>Monthly</option><option>Quarterly</option><option>Annual</option></select>`)}
-        ${fld('Timeframe',`<select id="bdTime" ${inp}>${bdTimeframeOpts('Monthly')}</select>`)}
-        ${fld('Fiscal Year',`<input id="bdYear" type="number" value="${yr}" ${inp}>`)}
-        ${fld('Target Allocation',`<input id="bdAmt" type="number" min="0" ${inp}>`)}
-      </div><div style="margin-top:12px"><button class="btn primary" onclick="bdAddLine()">Add Budget Line</button></div></div></div>
-    <div class="panel"><div class="panel-head"><h3>2. Record Expenditure</h3></div><div class="panel-body">
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">
-        ${fld('Budget Line',`<select id="bdActLine" ${inp}><option value="">Select budget line</option>${state.budgetLines.map(l=>`<option value="${l.id}">${esc(bdLineLabel(l))}</option>`).join('')}</select>`)}
-        ${fld('Actual Amount Incurred',`<input id="bdActAmt" type="number" min="0" ${inp}>`)}
-        ${fld('Date',`<input id="bdActDate" type="date" value="${todayISO()}" ${inp}>`)}
-        ${fld('Note',`<input id="bdActNote" ${inp}>`)}
-      </div><div style="margin-top:12px"><button class="btn primary" onclick="bdAddActual()">Record Expenditure</button></div>
-      <div style="font-size:12px;opacity:.7;margin-top:8px">If the line is linked to a project, the amount is added to that project's actual cost.</div></div></div>
-  </div>
-  <div class="panel"><div class="panel-head"><h3>Budget vs. Actual Ledger</h3>
-    <div style="display:flex;gap:8px"><input placeholder="Search account, dept, period..." value="${esc(bdSearch)}" oninput="bdSearch=this.value;render();var i=document.querySelector('[placeholder^=&quot;Search account&quot;]');i.focus();i.setSelectionRange(i.value.length,i.value.length)" style="padding:6px 10px;border:1px solid var(--border,#ddd);border-radius:8px">
-    <button class="btn small" onclick="bdExport()">Export CSV</button><button class="btn small" onclick="bdReset()">Reset</button></div></div>
-    <div class="panel-body" style="overflow-x:auto"><table class="data-table" style="width:100%"><thead><tr><th>Account</th><th>Department</th><th>Project</th><th>Period</th><th>Timeframe</th><th>Year</th><th>Budget</th><th>Actual</th><th>Variance</th><th>% Used</th><th>Status</th><th></th></tr></thead><tbody>
-    ${rows.map(r=>`<tr><td>${esc(r.account)}${r.bk?' <span title="Synced from the Books Budgets module" style="font-size:10px;padding:1px 6px;border-radius:99px;background:#0f766e;color:#fff">Books</span>':''}</td><td>${esc(r.department||'—')}</td><td>${r.projectId?esc(projectName(r.projectId)):'—'}</td><td>${r.period}</td><td>${r.timeframe}</td><td>${r.year}</td><td>${fmtMoney(r.budget)}</td><td>${fmtMoney(r.actual)}</td>
-      <td style="color:${r.variance<0?'var(--danger)':'var(--success)'}">${fmtMoney(r.variance)}</td><td>${r.used.toFixed(0)}%</td><td>${esc(r.status)}</td><td>${r.bk?'':`<button class="btn small" onclick="bdDelLine('${r.id}')">Delete</button>`}</td></tr>`).join('')||'<tr><td colspan="12" style="text-align:center;opacity:.6;padding:20px">No budget lines yet. Add one above.</td></tr>'}
-    </tbody></table></div></div>
-  <h3 style="margin:24px 0 8px">Budget by project</h3>${tmp.innerHTML}`;
-  setHeader('Finance','Budgets','');
-}
-function bdPlanPick(){
-  const t=document.getElementById('bdPlan').value, set=(id,v)=>{const el=document.getElementById(id); if(el&&v!==undefined&&v!==null&&v!=='') el.value=v;};
-  const pl=(booksData().plans||[]).find(x=>x.title===t); if(!pl) return;
-  const b=matchBudgetForPlan(pl);
-  set('bdAcc', b?b.account:pl.linkedBudget); set('bdDept', (b&&b.department&&b.department!=='General')?b.department:pl.department);
-  const pj=state.projects.find(x=>x.planTitle===pl.title); if(pj) set('bdProj',pj.id);
-  const y=String(pl.startDate||'').slice(0,4); if(/^\d{4}$/.test(y)) set('bdYear',y);
-  if(b){ const tot=budgetTotal(b); if(tot) set('bdAmt',tot); }
-}
-function bdAddLine(){
-  bdEnsure(); const g=id=>document.getElementById(id).value;
-  const amount=parseFloat(g('bdAmt')); if(!g('bdAcc').trim()||isNaN(amount)) return toast('Enter an account category and target amount.');
-  state.budgetLines.push({id:uid('bl'),account:g('bdAcc').trim(),department:g('bdDept').trim(),projectId:g('bdProj')||'',planTitle:g('bdPlan')||'',period:g('bdPeriod'),timeframe:g('bdTime'),year:g('bdYear'),amount});
-  saveState(); toast('Budget line added.'); render();
-}
-function bdAddActual(){
-  bdEnsure(); const g=id=>document.getElementById(id).value, l=state.budgetLines.find(x=>x.id===g('bdActLine')), amount=parseFloat(g('bdActAmt'));
-  if(!l||isNaN(amount)) return toast('Select a budget line and enter an amount.');
-  state.budgetActuals.push({id:uid('ba'),lineId:l.id,amount,date:g('bdActDate'),note:g('bdActNote').trim()});
-  const p=state.projects.find(x=>x.id===l.projectId); if(p) p.actualCost=(Number(p.actualCost)||0)+amount;
-  saveState(); toast('Expenditure recorded.'); render();
-}
-function bdDelLine(id){
-  { const bl=(state.budgetLines||[]).find(x=>x.id===id); if(bl&&bl.bk) return toast('This line comes from the Books Budgets module. Change or remove it in Books.'); }
-  if(!confirm('Delete this budget line and its recorded expenditure?')) return;
-  const l=state.budgetLines.find(x=>x.id===id), sum=state.budgetActuals.filter(a=>a.lineId===id).reduce((t,a)=>t+Number(a.amount||0),0);
-  const p=l&&state.projects.find(x=>x.id===l.projectId); if(p) p.actualCost=Math.max(0,(Number(p.actualCost)||0)-sum);
-  state.budgetLines=state.budgetLines.filter(x=>x.id!==id); state.budgetActuals=state.budgetActuals.filter(a=>a.lineId!==id); saveState(); render();
-}
-function bdReset(){
-  if(!confirm('Clear all budget lines and expenditure entered here? (Lines synced from Books stay.) Project actual costs will be reduced accordingly.')) return;
-  state.budgetLines.filter(l=>!l.bk).forEach(l=>{ const sum=state.budgetActuals.filter(a=>a.lineId===l.id).reduce((t,a)=>t+Number(a.amount||0),0); const p=state.projects.find(x=>x.id===l.projectId); if(p) p.actualCost=Math.max(0,(Number(p.actualCost)||0)-sum); });
-  state.budgetLines=state.budgetLines.filter(l=>l.bk); state.budgetActuals=state.budgetActuals.filter(a=>a.bk); saveState(); render();
-}
-function bdExport(){
-  bdEnsure(); const q=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
-  const lines=[['Account','Department','Project','Period','Timeframe','Year','Budget','Actual','Variance'].join(',')].concat(state.budgetLines.map(l=>{const a=state.budgetActuals.filter(x=>x.lineId===l.id).reduce((t,x)=>t+Number(x.amount||0),0);return [l.account,l.department,projectName(l.projectId),l.period,l.timeframe,l.year,l.amount,a,l.amount-a].map(q).join(',')}));
-  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/csv'})); a.download='budget-vs-actual.csv'; a.click();
-}
+boot();
