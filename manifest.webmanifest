@@ -1,1 +1,24 @@
-{"id":"./","name":"Acacia Workspace","short_name":"Acacia Workspace","description":"Acacia Plans and Projects workspace","start_url":"./index.html","scope":"./","display":"standalone","background_color":"#f3f6fa","theme_color":"#10243a","icons":[{"src":"assets/icon-192.png","sizes":"192x192","type":"image/png"},{"src":"assets/icon-512.png","sizes":"512x512","type":"image/png"}]}
+{
+ "name": "Acacia Budget",
+ "short_name": "Budget",
+ "description": "Budgets, spending control and forecasts",
+ "start_url": "./index.html",
+ "scope": "./",
+ "display": "standalone",
+ "background_color": "#ffffff",
+ "theme_color": "#0E2B29",
+ "icons": [
+  {
+   "src": "icon-192.png",
+   "sizes": "192x192",
+   "type": "image/png",
+   "purpose": "any maskable"
+  },
+  {
+   "src": "icon-512.png",
+   "sizes": "512x512",
+   "type": "image/png",
+   "purpose": "any maskable"
+  }
+ ]
+}

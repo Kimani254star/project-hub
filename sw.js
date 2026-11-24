@@ -1,1 +1,9 @@
-const CACHE='acacia-workspace-v1';const CORE=['./','./index.html','./manifest.webmanifest','./assets/icon-192.png','./assets/icon-512.png'];self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(CORE))));self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k))))));self.addEventListener('fetch',e=>{const u=new URL(e.request.url);if(u.origin===location.origin&&e.request.method==='GET')e.respondWith(caches.match(e.request).then(hit=>hit||fetch(e.request).then(r=>{const copy=r.clone();caches.open(CACHE).then(c=>c.put(e.request,copy));return r}).catch(()=>caches.match('./index.html'))));});
+/* Acacia Budget service worker: caches the app shell so it installs and opens offline. */
+const CACHE='acacia-budget-v1';
+const SHELL=['./','index.html','style.css','script.js','acacia-dash.css','acacia-dash.js','acacia-theme.js','acacia-appearance.js','acacia-actions.js','acacia-signout.js','acacia-help.js','acacia-sidebar.js','acacia-brand.js','icon-192.png','icon-512.png','manifest.webmanifest'];
+self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>Promise.all(SHELL.map(u=>c.add(u).catch(()=>{})))).then(()=>self.skipWaiting()));});
+self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==CACHE).map(x=>caches.delete(x)))).then(()=>self.clients.claim()));});
+self.addEventListener('fetch',e=>{
+  const r=e.request; if(r.method!=='GET'||new URL(r.url).origin!==location.origin) return;   /* Supabase and other sites go straight to the network */
+  e.respondWith(fetch(r).then(res=>{const copy=res.clone();caches.open(CACHE).then(c=>c.put(r,copy));return res;}).catch(()=>caches.match(r).then(m=>m||caches.match('index.html'))));
+});

@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Acacia Budget</title>
 <script>(function(){try{var t=localStorage.getItem('acacia_theme'); if(t==='dark') document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>
+<link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="#0E2B29"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png"><meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css">
 <script>window.ACACIA_APPEARANCE={sidebar:'.sidebar',items:'.sidebar .nav-item'};</script>
@@ -304,5 +305,12 @@
 <script src="acacia-signout.js"></script><script src="acacia-help.js"></script>
 <script src="acacia-sidebar.js"></script>
 <script src="acacia-brand.js"></script>
+<script>
+window.__installEvt=null;
+window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();window.__installEvt=e;var b=document.getElementById('installBtn');if(b)b.style.display='';});
+window.addEventListener('appinstalled',function(){window.__installEvt=null;var b=document.getElementById('installBtn');if(b)b.style.display='none';});
+function installApp(){var e=window.__installEvt;if(!e){alert('To install: open this page over https in Chrome, Edge or Safari, then use the browser menu > Install app (iPhone: Share > Add to Home Screen).');return;}e.prompt();}
+if('serviceWorker' in navigator&&location.protocol.indexOf('http')===0){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});}
+</script>
 </body>
 </html>
