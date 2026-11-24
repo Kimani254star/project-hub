@@ -1,1 +1,308 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#10243a"><title>Acacia Projects — Budget</title><link rel="stylesheet" href="books-style.css"><style>body{background:#f3f6fa!important;color:#172033!important}#budgetsTab{display:block!important;max-width:1600px;margin:0 auto!important}.projects-bar{background:#10243a;color:#fff;padding:13px 20px;display:flex;justify-content:space-between;align-items:center}.projects-bar a{color:white;text-decoration:none;font-size:13px}.projects-bar strong{font-size:16px}#budgetsTab .hidden{display:none!important}</style><script src="https://cdn.tailwindcss.com"></script><script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script><script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script></head><body><header class="projects-bar"><strong>ACACIA PROJECTS · BUDGET</strong><a href="../../index.html">← Workspace home</a></header><main id="budgetRoot"></main><script>fetch('budget-module.html').then(r=>{if(!r.ok)throw Error('Budget module could not be loaded');return r.text()}).then(html=>{document.getElementById('budgetRoot').innerHTML=html;window.requirePermission=window.requirePermission||function(){return true};try{if(typeof loadData==='function')loadData();if(typeof setActualDefaults==='function')setActualDefaults();if(typeof renderBudgets==='function')renderBudgets();if(typeof refreshBudgetViews==='function')refreshBudgetViews();if(typeof renderBudgetVarianceReport==='function')renderBudgetVarianceReport();}catch(e){console.warn('Budget initialisation:',e)}}).catch(e=>{document.getElementById('budgetRoot').innerHTML='<p style="padding:24px">Unable to load Budget module. '+e.message+'</p>'});</script><script src="budget-engine.js"></script></body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head><script src="acacia-theme.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Acacia Budget</title>
+<script>(function(){try{var t=localStorage.getItem('acacia_theme'); if(t==='dark') document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css">
+<script>window.ACACIA_APPEARANCE={sidebar:'.sidebar',items:'.sidebar .nav-item'};</script>
+<script src="acacia-appearance.js"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&display=swap"><script>window.ADX_TAGLINE='Plan. Control. Forecast.';</script><link rel="stylesheet" href="acacia-dash.css"><script src="acacia-dash.js"></script></head>
+<body>
+<div id="homePage"><script>window.__SUPA_URL__=window.__SUPA_URL__||"https://xglsampckermarjpczdf.supabase.co";window.__SUPA_KEY__=window.__SUPA_KEY__||"sb_publishable_x-dPR7pzhvJgag9soW0I8w_yfKTmi6A";window.openLogin=function(){hpShowLogin("login")};window.acaciaHideLanding=window.openLogin;window.showRegisterForm=function(){hpShowLogin("register")};window.choosePlan=function(){window.showRegisterForm()};window.addEventListener("message",function(e){if(e.origin!=="https://acacia-books.vercel.app"&&e.origin!==location.origin)return;var m=e.data&&e.data.acx;if(m==="login")window.openLogin();if(m==="register")window.showRegisterForm()});</script>
+
+<header class="hp-header">
+<a href="#top" class="hp-logo" data-scroll>
+<div class="hp-logo-mark"><i class="fa-solid fa-wallet"></i></div>
+<div>
+<h2>Acacia Budget</h2>
+<span>Budgets &amp; forecasts</span>
+</div>
+</a>
+<nav class="hp-nav" id="hpNav" aria-label="Main">
+<ul><li><a href="#top" data-scroll>Home</a></li><li><a href="#about" data-scroll>About</a></li><li><a href="#features" data-scroll>Features</a></li><li><a href="#process" data-scroll>How it works</a></li><li><a href="#pricing" data-scroll>Pricing</a></li><li><a href="#faq" data-scroll>FAQ</a></li><li><a href="#contact" data-scroll>Contact</a></li></ul>
+</nav>
+<div class="hp-actions">
+<button type="button" class="hp-theme" onclick="hpTheme()" aria-label="Toggle dark mode" title="Toggle dark mode"><i class="fa-solid fa-moon hp-moon"></i><i class="fa-solid fa-sun hp-sun"></i></button>
+<button type="button" class="hp-signin" onclick="hpShowLogin('login')">Log in</button>
+<a href="#register" class="hp-getstarted" onclick="hpShowLogin('register');return false;">Create account</a>
+<button type="button" class="hp-burger" id="hpBurger" aria-label="Open menu" aria-expanded="false"><i class="fa-solid fa-bars"></i></button>
+</div>
+</header>
+
+<section class="hp-hero hp-page" data-page="top">
+<div class="hp-slides" aria-hidden="true">
+      <div class="hp-slide active" style="background-image:url('https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=1920&q=80');"></div>
+      <div class="hp-slide" style="background-image:url('https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1920&q=80');"></div>
+      <div class="hp-slide" style="background-image:url('https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=1920&q=80');"></div>
+    </div>
+<div class="hp-left">
+<div class="hp-badge"><i class="fa-solid fa-wallet"></i> Plan budgets, control spending and forecast cash in one place.</div>
+<h1>Keep every shilling on plan.</h1>
+<p>Acacia Budget helps your team create budgets, allocate them to accounts, departments and projects, control spending and forecast income and expenses.</p>
+<p>Log in to your account, or create one for your company and start your first budget.</p>
+<div class="hp-hero-btns">
+<a href="#register" class="hp-primary" onclick="hpShowLogin('register');return false;">Create your account</a>
+<a href="#login" class="hp-secondary" onclick="hpShowLogin('login');return false;">Log in</a>
+</div>
+</div>
+<div class="hp-right">
+<div class="hp-preview">
+<h2>What's inside</h2>
+<div class="hp-item"><span>Budgets</span><strong>Annual, monthly &amp; quarterly</strong></div><div class="hp-item"><span>Allocations</span><strong>Accounts, departments, projects</strong></div><div class="hp-item"><span>Control</span><strong>Approvals &amp; limits</strong></div><div class="hp-item"><span>Forecasts</span><strong>Income, expense &amp; cash</strong></div>
+</div>
+<div class="hp-float hp-float1"><i class="fa-solid fa-check"></i> Approvals</div><div class="hp-float hp-float2"><i class="fa-solid fa-chart-line"></i> Forecasts</div>
+</div>
+</section>
+
+<section class="hp-section hp-page" id="hp-about" data-page="about">
+<div class="hp-two">
+<div class="hp-text">
+<div class="hp-title left">
+<span>About Acacia Budget</span>
+<h2>One place for the plan, the spending and the forecast.</h2>
+</div>
+<p>Acacia Budget keeps your budgets, allocations and spending together, so everyone can see what is planned and what has been used.</p><p>Approve budgets before money is spent, set spending limits, track commitments, and move money between allocations when plans change.</p><p>A dashboard, forecasts and reports show where each budget stands.</p>
+<div class="hp-actions-row">
+<a href="#register" class="hp-btn" onclick="hpShowLogin('register');return false;">Create your account <i class="fa-solid fa-arrow-right"></i></a>
+<button type="button" class="hp-btn ghost" onclick="hpShowLogin('login')">Log in</button>
+</div>
+</div>
+<div>
+<div class="hp-stats"><div class="hp-stat"><h4>Planned</h4><p>Annual, monthly and quarterly budgets</p></div><div class="hp-stat"><h4>Allocated</h4><p>By account, department and project</p></div><div class="hp-stat"><h4>Controlled</h4><p>Approvals, limits and commitments</p></div><div class="hp-stat"><h4>Forecast</h4><p>Income, expenses and cash flow</p></div></div>
+<div class="hp-quote">
+<i class="fa-solid fa-quote-left"></i>
+<p>Plan budgets, control spending and forecast cash in one place.</p>
+</div>
+</div>
+</div>
+</section>
+
+<section class="hp-section-alt hp-page" id="hp-features" data-page="features">
+<div class="hp-title">
+<span>What you get</span>
+<h2>Everything you need to manage budgets</h2>
+<p>Six areas that take a budget from plan to report.</p>
+</div>
+<div class="hp-grid3"><div class="hp-card"><div class="hp-icon"><i class="fa-solid fa-gauge"></i></div><h3>Budget dashboard</h3><p>See approved budget, spending, commitments and what is left at a glance.</p></div><div class="hp-card"><div class="hp-icon"><i class="fa-solid fa-sliders"></i></div><h3>Budget management</h3><p>Create annual, monthly and quarterly budgets and group them by category.</p></div><div class="hp-card"><div class="hp-icon"><i class="fa-solid fa-diagram-project"></i></div><h3>Allocations</h3><p>Split budgets across accounts, departments and projects.</p></div><div class="hp-card"><div class="hp-icon"><i class="fa-solid fa-shield-halved"></i></div><h3>Budget control</h3><p>Approvals, revisions, transfers, spending limits and committed expenditure.</p></div><div class="hp-card"><div class="hp-icon"><i class="fa-solid fa-chart-line"></i></div><h3>Forecasting</h3><p>Forecast income and expenses and see the cash flow that follows.</p></div><div class="hp-card"><div class="hp-icon"><i class="fa-solid fa-file-lines"></i></div><h3>Budget reports</h3><p>Budget vs actual, variance, utilization, and department and project reports.</p></div></div>
+</section>
+
+<section class="hp-section hp-page" id="hp-process" data-page="process">
+<div class="hp-title">
+<span>How it works</span>
+<h2>From plan to report</h2>
+<p>Three steps, and your budget is working.</p>
+</div>
+<div class="hp-steps"><div class="hp-step"><div class="hp-num">1</div><h3>Create your account</h3><p>Enter your company name, your name, your email address and a password. You start with a blank account, ready for your own budgets.</p></div><div class="hp-step"><div class="hp-num">2</div><h3>Build the budget</h3><p>Create a budget, allocate it, and send it for approval.</p></div><div class="hp-step"><div class="hp-num">3</div><h3>Track and forecast</h3><p>Record spending and commitments, watch utilization, and use forecasts and reports to stay ahead.</p></div></div>
+</section>
+
+<section class="hp-section-alt hp-page" id="hp-pricing" data-page="pricing">
+    <div class="hp-title">
+      <span>Pricing</span>
+      <h2>Simple pricing</h2>
+      <p>One plan with everything included. New accounts are approved by Acacia support before you can sign in.</p>
+    </div>
+    <div class="hp-billing">
+      <span>Monthly</span>
+      <label class="hp-switch"><input type="checkbox" id="hpBilling" onchange="hpBillingToggle()" aria-label="Bill yearly"><i></i></label>
+      <span>Yearly <em>(2 months free)</em></span>
+    </div>
+    <div class="hp-tiers6" style="grid-template-columns:repeat(auto-fit,minmax(260px,340px));justify-content:center">
+      <div class="hp-tier">
+        
+        <h3>Budget</h3>
+        <div class="hp-tag">Everything included</div>
+        <div class="hp-price"><span class="hp-amt" data-month="5000" data-year="50000">KES 5,000</span><small class="hp-per">/mo</small></div>
+        <ul class="hp-feats"><li>Budgets, allocations &amp; approvals</li><li>Spending limits &amp; commitments</li><li>Income, expense &amp; cash flow forecasts</li><li>Dashboard &amp; reports</li><li>Your whole team on one account</li></ul>
+        <a href="#register" class="hp-tier-btn" onclick="hpShowLogin('register');return false;">Choose Budget</a>
+      </div>
+</div>
+  </section>
+
+<section class="hp-section hp-page" id="hp-faq" data-page="faq">
+<div class="hp-title">
+<span>Good questions</span>
+<h2>Frequently asked questions</h2>
+<p>A few quick answers before you sign up.</p>
+</div>
+<div class="hp-faq"><details open><summary>How do I create an account?</summary><p>Choose Create account and enter your company name, your name, your email address and a password of at least 6 characters.</p></details><details><summary>Can I split a budget by department or project?</summary><p>Yes. Allocate any budget to accounts, departments or projects and see how much of each is used.</p></details><details><summary>Can I stop overspending?</summary><p>Yes. Only approved budgets can be spent against, and you can set spending limits that warn or block.</p></details><details><summary>Can I forecast cash?</summary><p>Yes. Enter income and expense forecasts and the cash flow forecast shows your projected balance.</p></details><details><summary>Is my data kept per company?</summary><p>Yes. Each company has its own separate data, and everyone in that company sees the same records.</p></details></div>
+</section>
+
+<section class="hp-section-alt hp-page" id="hp-contact" data-page="contact">
+<div class="hp-two">
+<div class="hp-text">
+<div class="hp-title left">
+<span>Get in touch</span>
+<h2>Questions about Acacia Budget?</h2>
+</div>
+<p>Send a message and we'll reply by email.</p>
+<div class="hp-contact-list">
+<div><i class="fa-solid fa-envelope"></i> <a href="mailto:hello@example.com">hello@example.com</a></div>
+</div>
+</div>
+<div class="hp-form-card">
+<form class="hp-form" onsubmit="return hpContact(event)">
+<label>Your name<input id="hpName" required autocomplete="name"></label>
+<label>Email address<input id="hpEmail" type="email" required autocomplete="email"></label>
+<label>Your message<textarea id="hpMsg" required rows="4"></textarea></label>
+<button type="submit" class="hp-btn">Send message <i class="fa-solid fa-paper-plane"></i></button>
+<p id="contactConfirm" class="hidden">Your email app should open with the message ready to send.</p>
+</form>
+</div>
+</div>
+</section>
+
+<section class="hp-cta hp-page" data-page="top">
+<div class="hp-ctabox">
+<div>
+<h2>Ready to get your budgets organised?</h2>
+<p>Create your company account, or log in and pick up where you left off.</p>
+<div class="hp-cta-btns">
+<a href="#register" class="hp-cta-primary" onclick="hpShowLogin('register');return false;">Create your account</a>
+<button type="button" class="hp-cta-secondary" onclick="hpShowLogin('login')">Log in</button>
+</div>
+</div>
+<div class="hp-cta-card">
+<h3>What you get</h3>
+<div class="hp-cta-item"><span>Plan</span><strong>Budgets / Allocations / Approvals</strong></div><div class="hp-cta-item"><span>Control</span><strong>Limits / Commitments / Transfers</strong></div><div class="hp-cta-item"><span>Forecast</span><strong>Income / Expenses / Cash flow</strong></div>
+</div>
+</div>
+</section>
+
+<footer class="hp-footer">
+<div class="hp-footgrid">
+<div class="hp-footlogo">
+<h2>Acacia Budget</h2>
+<p>Plan budgets, control spending and forecast cash in one place.</p>
+</div>
+<div class="hp-footcol">
+<h3>Explore</h3>
+<ul>
+<li><a href="#about" data-scroll>About</a></li>
+<li><a href="#features" data-scroll>Features</a></li>
+<li><a href="#pricing" data-scroll>Pricing</a></li>
+</ul>
+</div>
+<div class="hp-footcol">
+<h3>Account</h3>
+<ul>
+<li><a href="#faq" data-scroll>FAQ</a></li>
+<li><button type="button" onclick="hpShowLogin('login')">Log in</button></li>
+<li><button type="button" onclick="hpShowLogin('register')">Create account</button></li>
+</ul>
+</div>
+<div class="hp-footcol">
+<h3>Contact</h3>
+<ul>
+<li><a href="mailto:hello@example.com"><i class="fa-solid fa-envelope" style="font-size:12px;margin-right:4px;"></i> hello@example.com</a></li>
+</ul>
+</div>
+</div>
+<div class="hp-bottom">
+<span>&copy; <span id="footerYear"></span> Acacia Budget.</span>
+</div>
+</footer>
+</div>
+<!-- ============ END PUBLIC HOME PAGE ============ -->
+
+<div id="authScreen">
+  <div class="auth-wrap">
+    <div class="auth-side">
+      <div>
+        <div class="mark">ACACIA BOOKS</div>
+        <h1>Acacia Budget</h1>
+        <div class="pitch">Create budgets, control spending and forecast income, expenses and cash in one place.</div>
+        <div class="pitch-list">
+          <div>◆ Budgets, allocations and approvals</div>
+          <div>◆ Spending limits, commitments and transfers</div>
+          <div>◆ Forecasts, cash flow and reports</div>
+        </div>
+      </div>
+      <div class="foot">Your data is stored locally in this browser.</div>
+    </div>
+    <div class="auth-form-panel">
+      <a class="auth-back" onclick="hpShowHome()">&larr; Back to site</a>
+      <div class="auth-tabs">
+        <div class="auth-tab active" id="tabLoginBtn" onclick="switchAuthTab('login')">Log In</div>
+        <div class="auth-tab" id="tabRegisterBtn" onclick="switchAuthTab('register')">Create Account</div>
+      </div>
+
+      <div id="loginPane">
+        <h2>Welcome back</h2>
+        <div class="sub">Log in to your Acacia Books account.</div>
+        <div class="auth-error" id="loginError"></div>
+        <div class="auth-field"><label>Company name</label><input id="loginCompany" type="text" autocomplete="organization" placeholder="Exactly as registered (or company ID)"></div>
+        <div class="auth-field"><label>Email address</label><input id="loginEmail" type="email" autocomplete="username" placeholder="you@company.co.ke"></div>
+        <div class="auth-field"><label>Password</label><input id="loginPassword" type="password" autocomplete="current-password" placeholder="••••••••"></div>
+        <button class="btn primary auth-submit" onclick="handleLogin()">Log In</button>
+        <div class="auth-switch">Don't have an account? <a onclick="switchAuthTab('register')">Create one</a></div>
+      </div>
+
+      <div id="registerPane" style="display:none;">
+        <h2>Create your account</h2>
+        <div class="sub">Set up Acacia Books for your company.</div>
+        <div class="auth-error" id="registerError"></div>
+        <div class="auth-field"><label>Company name</label><input id="regCompany" placeholder="e.g. Baraka Traders Ltd"></div>
+        <div class="auth-field"><label>Your name</label><input id="regName" placeholder="e.g. Wanjiru Kariuki"></div>
+        <div class="auth-field"><label>Email address</label><input id="regEmail" type="email" autocomplete="username" placeholder="you@company.co.ke"></div>
+        <div class="auth-field"><label>Password</label><input id="regPassword" type="password" autocomplete="new-password" placeholder="At least 6 characters"></div>
+        <div class="auth-field"><label>Plan</label><select id="regPlan" onchange="acxPlanChanged()"><option value="budget_standard" data-price="5000">Budget &mdash; KES 5,000 / month</option></select></div>
+        <div class="auth-field"><label>Billing</label><select id="regBilling" onchange="acxPlanChanged()"><option value="monthly">Monthly</option><option value="yearly">Full year (2 months free)</option></select></div>
+        <div id="regPlanNote" style="font-size:12px;color:#64748b;margin:-2px 0 10px"></div>
+                <button class="btn primary auth-submit" onclick="handleRegister()">Create Account</button>
+        <div class="auth-switch">Already have an account? <a onclick="switchAuthTab('login')">Log in</a></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="mark">ACACIA BOOKS</div>
+      <h1>Acacia Budget</h1>
+    </div>
+    <nav id="nav"></nav>
+    <div class="foot" style="display:flex;flex-direction:column;gap:8px;">
+      <div id="sidebarUser" style="color:#DCE6DC;"></div>
+    </div>
+  </aside>
+  <div class="main">
+    <div class="topbar">
+      <div class="titles">
+        <div class="eyebrow" id="pageEyebrow">Overview</div>
+        <h2 id="pageTitle">Dashboard</h2>
+      </div>
+      <div class="actions" id="topActions"></div>
+      <button class="icon-btn" id="themeToggle" onclick="toggleTheme()" title="Toggle dark mode" style="font-size:17px;border:1px solid var(--line);border-radius:var(--radius);padding:6px 9px;">🌙</button>
+    </div>
+    <div class="content" id="content"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="modalTitle">New item</h3>
+      <button class="icon-btn" onclick="closeModal()" style="font-size:18px;">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn primary" id="modalSaveBtn">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="acacia-actions.js"></script>
+<script src="script.js"></script>
+
+<script src="acacia-signout.js"></script><script src="acacia-help.js"></script>
+<script src="acacia-sidebar.js"></script>
+<script src="acacia-brand.js"></script>
+</body>
+</html>

@@ -1,118 +1,279 @@
-/* Acacia Support popup (Plans) — same help options as Acacia Books: Navigate, AI Assistant, Chat, Email.
+/* Acacia Support popup — same help options as Acacia Books: Navigate, AI Assistant, Chat, Email.
    Self-contained: injects its own styles and button, reads this app's own menu (NAV / goTo) to jump to screens. */
 (function () {
   'use strict';
   if (window.__acxHelp) return; window.__acxHelp = true;
   var CFG = {
- "app": "Plans",
- "title": "Acacia Plans",
+ "app": "Budget",
+ "title": "Acacia Budget",
  "email": "developeracaciabooks@gmail.com,adminacaciabooks@gmail.com",
  "screens": [
   {
-   "id": "plans",
-   "module": "Plan Hub",
-   "desc": "create plans and see all your plans in one place.",
-   "tip": "Under Plans Hub, click Plan Hub.",
+   "id": "budgetOverview",
+   "module": "Budget Overview",
+   "desc": "overview of approved budget, spending, commitments and what is left.",
+   "tip": "Open it from the left menu.",
    "keywords": [
-    "plan",
-    "new plan",
-    "add plan",
-    "create plan",
-    "all plans",
-    "goal",
-    "target"
+    "home",
+    "overview",
+    "summary",
+    "dashboard"
    ]
   },
   {
-   "id": "ownership",
-   "module": "Ownership",
-   "desc": "set who owns each plan and which team works on it.",
-   "tip": "Under Plan Progress, click Ownership.",
+   "id": "budgetUtilization",
+   "module": "Budget Utilization",
+   "desc": "how much of each budget has been used.",
+   "tip": "Open it from the left menu.",
    "keywords": [
-    "owner",
-    "ownership",
-    "team",
-    "responsible",
-    "assign"
+    "utilization",
+    "used",
+    "usage"
    ]
   },
   {
-   "id": "progress",
-   "module": "Track Progress",
-   "desc": "update how far each plan has got.",
-   "tip": "Under Plan Progress, click Track Progress.",
+   "id": "spendingSummary",
+   "module": "Spending Summary",
+   "desc": "what has been spent, and where. You can record expenses here.",
+   "tip": "Open it from the left menu.",
    "keywords": [
-    "progress",
-    "status",
-    "track",
-    "delayed",
-    "completed"
-   ]
-  },
-  {
-   "id": "expenses",
-   "module": "Track Expenses",
-   "desc": "operational costs linked to your plans (read-only, comes from Books).",
-   "tip": "Under Plan Progress, click Track Expenses.",
-   "keywords": [
+    "spending",
     "expense",
-    "cost",
-    "spend",
-    "operational cost",
-    "budget"
+    "spent",
+    "record expense"
    ]
   },
   {
-   "id": "revisions",
-   "module": "Review & Revise",
-   "desc": "record reviews and changes made to a plan.",
-   "tip": "Under Plan Progress, click Review & Revise.",
+   "id": "createBudget",
+   "module": "Create Budget",
+   "desc": "create a new budget and save it as a draft or send it for approval.",
+   "tip": "Open it from the left menu.",
    "keywords": [
-    "review",
+    "create budget",
+    "new budget",
+    "add budget"
+   ]
+  },
+  {
+   "id": "annualBudgets",
+   "module": "Annual Budgets",
+   "desc": "all annual budgets.",
+   "tip": "Open it from the left menu.",
+   "keywords": [
+    "annual",
+    "yearly"
+   ]
+  },
+  {
+   "id": "monthlyBudgets",
+   "module": "Monthly Budgets",
+   "desc": "all monthly budgets.",
+   "tip": "Open it from the left menu.",
+   "keywords": [
+    "monthly"
+   ]
+  },
+  {
+   "id": "quarterlyBudgets",
+   "module": "Quarterly Budgets",
+   "desc": "all quarterly budgets.",
+   "tip": "Open it from the left menu.",
+   "keywords": [
+    "quarterly",
+    "quarter"
+   ]
+  },
+  {
+   "id": "budgetCategories",
+   "module": "Budget Categories",
+   "desc": "income and expense categories used by budgets.",
+   "tip": "Open it from the left menu.",
+   "keywords": [
+    "category",
+    "categories"
+   ]
+  },
+  {
+   "id": "accountAllocations",
+   "module": "Account Allocations",
+   "desc": "split a budget across accounts.",
+   "tip": "Open it from the left menu.",
+   "keywords": [
+    "account allocation",
+    "allocate"
+   ]
+  },
+  {
+   "id": "departmentAllocations",
+   "module": "Department Allocations",
+   "desc": "split a budget across departments.",
+   "tip": "Open it from the left menu.",
+   "keywords": [
+    "department",
+    "allocate"
+   ]
+  },
+  {
+   "id": "projectAllocations",
+   "module": "Project Allocations",
+   "desc": "split a budget across projects.",
+   "tip": "Open it from the left menu.",
+   "keywords": [
+    "project",
+    "allocate"
+   ]
+  },
+  {
+   "id": "budgetApprovals",
+   "module": "Budget Approvals",
+   "desc": "approve or reject budgets and see the approval history.",
+   "tip": "Open it from the left menu.",
+   "keywords": [
+    "approve",
+    "approval",
+    "reject",
+    "submit"
+   ]
+  },
+  {
+   "id": "budgetRevisions",
+   "module": "Budget Revisions",
+   "desc": "change an approved budget amount with a recorded reason.",
+   "tip": "Open it from the left menu.",
+   "keywords": [
     "revise",
     "revision",
-    "change plan",
-    "update plan"
+    "change budget"
    ]
   },
   {
-   "id": "actions",
-   "module": "Action Plan",
-   "desc": "action items needed to deliver a plan.",
-   "tip": "Under Plan Progress, click Action Plan.",
+   "id": "budgetTransfers",
+   "module": "Budget Transfers",
+   "desc": "move money from one allocation to another.",
+   "tip": "Open it from the left menu.",
    "keywords": [
-    "action",
-    "action item",
-    "task",
-    "to do",
-    "todo"
+    "transfer",
+    "move money",
+    "reallocate"
    ]
   },
   {
-   "id": "revenue",
-   "module": "Plan Revenue",
-   "desc": "revenue earned against each plan.",
-   "tip": "Under Revenue, click Plan Revenue.",
+   "id": "spendingLimits",
+   "module": "Spending Limits",
+   "desc": "set limits that warn or block spending.",
+   "tip": "Open it from the left menu.",
    "keywords": [
-    "revenue",
+    "limit",
+    "block",
+    "warn",
+    "overspend"
+   ]
+  },
+  {
+   "id": "committedExpenditure",
+   "module": "Committed Expenditure",
+   "desc": "purchase orders and contracts not yet paid.",
+   "tip": "Open it from the left menu.",
+   "keywords": [
+    "commitment",
+    "committed",
+    "purchase order",
+    "po"
+   ]
+  },
+  {
+   "id": "incomeForecast",
+   "module": "Income Forecast",
+   "desc": "expected income by month.",
+   "tip": "Open it from the left menu.",
+   "keywords": [
     "income",
-    "sales",
-    "earned",
-    "target amount"
+    "revenue",
+    "forecast"
    ]
   },
   {
-   "id": "appearance",
-   "module": "Appearance",
-   "desc": "colours, theme and look of the app.",
-   "tip": "Click Appearance under Settings at the bottom of the sidebar.",
+   "id": "expenseForecast",
+   "module": "Expense Forecast",
+   "desc": "expected spending by month.",
+   "tip": "Open it from the left menu.",
    "keywords": [
-    "appearance",
-    "theme",
-    "dark mode",
-    "colour",
-    "color",
-    "look"
+    "expense forecast",
+    "forecast"
+   ]
+  },
+  {
+   "id": "cashFlowForecast",
+   "module": "Cash Flow Forecast",
+   "desc": "projected cash balance for the next 12 months.",
+   "tip": "Open it from the left menu.",
+   "keywords": [
+    "cash flow",
+    "cash",
+    "balance"
+   ]
+  },
+  {
+   "id": "rptBudgetVsActual",
+   "module": "Budget vs Actual",
+   "desc": "budget compared with actual spending.",
+   "tip": "Open it from the left menu.",
+   "keywords": [
+    "budget vs actual",
+    "actual",
+    "report"
+   ]
+  },
+  {
+   "id": "rptBudgetVariance",
+   "module": "Budget Variance",
+   "desc": "overspends and underspends.",
+   "tip": "Open it from the left menu.",
+   "keywords": [
+    "variance",
+    "report"
+   ]
+  },
+  {
+   "id": "rptUtilization",
+   "module": "Budget Utilization Report",
+   "desc": "utilization of each approved budget.",
+   "tip": "Open it from the left menu.",
+   "keywords": [
+    "utilization report",
+    "report"
+   ]
+  },
+  {
+   "id": "rptDepartment",
+   "module": "Departmental Budget Report",
+   "desc": "budget, spending and remaining by department.",
+   "tip": "Open it from the left menu.",
+   "keywords": [
+    "department report",
+    "report"
+   ]
+  },
+  {
+   "id": "rptProject",
+   "module": "Project Budget Report",
+   "desc": "budget, spending and remaining by project.",
+   "tip": "Open it from the left menu.",
+   "keywords": [
+    "project report",
+    "report"
+   ]
+  },
+  {
+   "id": "settings",
+   "module": "Settings",
+   "desc": "company details, departments, projects, accounts and numbering.",
+   "tip": "Open it from the left menu.",
+   "keywords": [
+    "setting",
+    "configure",
+    "company",
+    "currency"
    ]
   }
  ],
@@ -134,7 +295,7 @@
     "teammate",
     "team member"
    ],
-   "answer": "☁️ <b>Sign in & data sync</b>\n\nSign in with the same <b>email and company name</b> you use in Acacia Books and you get the same company data.\n1. Changes are saved to the cloud a few seconds after you make them.\n2. The app also checks for your teammates' changes regularly.\n3. If you are offline, your work is kept in this browser and syncs when you are back online."
+   "answer": "☁️ <b>Sign in & data sync</b>\n\nSign in with the same <b>email and company name</b> on any computer or phone and you get the same company data.\n1. Changes are saved to the cloud a few seconds after you make them.\n2. The app also checks for your teammates' changes about every 30 seconds.\n3. If two people edit at once, both sets of changes are kept (records are merged, not replaced).\n4. If you are offline, your work is kept in this browser and syncs when you are back online."
   }
  ]
 };
@@ -154,11 +315,10 @@
   function esc(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 
   /* ---------- app hooks ---------- */
-  function loggedIn() { try { return typeof currentUser === 'function' && !!currentUser(); } catch (e) { return false; } }
+  function loggedIn() { try { return typeof CURRENT_USER !== 'undefined' && !!CURRENT_USER; } catch (e) { return false; } }
   function currentId() {
     try {
-      if (typeof active !== 'undefined') return active;
-      if (CFG.app === 'Projects') return route.section;
+      if (CFG.app === 'Projects' || CFG.app === 'Budget') return route.section;
       if (CFG.app === 'CRM') return currentView;
       if (CFG.app === 'Sell') return currentPage;
       if (CFG.app === 'Payroll') return ui.view;
@@ -174,7 +334,7 @@
   function go(id) {
     try {
       if (CFG.app === 'Expenses') { var n = document.querySelector('.nav-item[data-view="' + id + '"]'); if (n) n.click(); }
-      else if (typeof window.go === 'function') window.go(id);
+      else if (typeof goTo === 'function') goTo(id);
     } catch (e) { console.error(e); }
     $('acxhPop').classList.remove('open');
   }
@@ -236,7 +396,6 @@
     document.body.appendChild(fab); document.body.appendChild(pop);
 
     fab.addEventListener('click', toggle);
-    window.toggleSupportPopup = function () { if (loggedIn()) toggle(); };
     pop.addEventListener('click', function (e) {
       var t = e.target.closest('[data-a],[data-m],[data-go]'); if (!t) return;
       if (t.dataset.go) return go(t.dataset.go);
@@ -342,7 +501,7 @@
       var A = window.AcaciaCloud;
       window.ACX_APP = CFG.app;
       if (A && A.URL && !window.__SUPA_URL__) { window.__SUPA_URL__ = A.URL; window.__SUPA_KEY__ = A.KEY; }
-      window.acxSession = window.acxSession || function () { try { var u = currentUser(); return u && u.companyId ? { companyId: String(u.companyId), obj: u } : null; } catch (e) { return null; } };
+      window.acxSession = window.acxSession || function () { try { return CURRENT_USER && CURRENT_USER.companyId ? { companyId: String(CURRENT_USER.companyId), obj: CURRENT_USER } : null; } catch (e) { return null; } };
     } catch (e) {}
     var s = document.createElement('script'); s.src = 'acacia-support.js';
     s.onload = function () { if (window.acxOpenSupportPanel) start(); else alert('Support chat loaded but did not start correctly. Please refresh and try again, or use Email.'); };

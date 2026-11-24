@@ -61,22 +61,9 @@ function hpContact(e){
   e.preventDefault();
   var n=document.getElementById('hpName').value.trim(), m=document.getElementById('hpEmail').value.trim(), t=document.getElementById('hpMsg').value.trim();
   var body='From: '+n+' <'+m+'>\n\n'+t;
-  window.location.href='mailto:hello@example.com?subject='+encodeURIComponent('Acacia Plans enquiry')+'&body='+encodeURIComponent(body);
+  window.location.href='mailto:hello@example.com?subject='+encodeURIComponent('Acacia Projects enquiry')+'&body='+encodeURIComponent(body);
   document.getElementById('contactConfirm').classList.remove('hidden');
   return false;
-}
-
-/* Plans uses Tailwind screens, so its home/auth switching is different */
-function hpShowHome(){
-  authScreen.classList.add('hidden');
-  document.getElementById('homePage').style.display='block';
-  window.hpShowPage&&window.hpShowPage('top');
-}
-function hpHideHome(){ document.getElementById('homePage').style.display='none'; }
-function hpShowLogin(tab){
-  hpHideHome();
-  authScreen.classList.remove('hidden');
-  switchAuthTab(tab==='register'?'signup':'signin');
 }
 
 ;
@@ -136,7 +123,7 @@ function hpShowLogin(tab){
     } catch (e) {}
     /* paid add-on apps: the company's subscription must include this app (fails open if the status row can't be read) */
     try {
-      var ADDON = { crm: 'Acacia CRM', projects: 'Acacia Projects', payroll: 'Acacia Payroll', sell: 'Acacia Sell' };
+      var ADDON = { crm: 'Acacia CRM', budget: 'Acacia Budget', projects: 'Acacia Projects', payroll: 'Acacia Payroll', sell: 'Acacia Sell' };
       var appKey = low(cfg && cfg.app), appName = ADDON[appKey];
       if (appName) {
         var r2 = await req('acacia_company_status?select=*&company_id=eq.' + enc(cid));
@@ -227,42 +214,207 @@ function hpShowLogin(tab){
     return same.find(function (x) { return low(x.email) === low(u.email) && x.companyId === r.companyId; }) || null;
   }
 
-  /* ---- data sync (one JSON blob per company per app) ---- */
+  /* ---- data sync (one JSON blob per company per app) ----
+     Record-level three-way merge + compare-and-swap push, so several people editing the same company at once do not overwrite each other.
+       base = the copy last agreed with the cloud (acx_base_*), local = this browser's copy, remote = the cloud's copy.
+     - records (arrays of objects that have an id) are merged one by one; a record edited on one side and deleted on the other is kept
+     - a field changed on both sides keeps this browser's value; counters (next..., ...number) keep the larger value
+     - a push only succeeds if the cloud copy is still the one we merged with (updated_at must match); otherwise we merge again */
+  var syncTimer = 0, syncBusy = false, pendingRender = false, hookReload = null, hookRender = null;
   function tsKey(c) { return 'acx_ts_' + cfg.app + '_' + (c || ctx.companyId); }
   function dirtyKey(c) { return 'acx_dirty_' + cfg.app + '_' + (c || ctx.companyId); }
-  async function pullRow(app) {
-    var r = await req('acacia_app_data?select=value,updated_at&key=eq.data&company_id=eq.' + enc(ctx.companyId) + '&app=eq.' + enc(app));
-    if (!r.ok) return null; var j = await r.json(); return j[0] || null;
+  function baseKey(c) { return 'acx_base_' + cfg.app + '_' + (c || ctx.companyId); }
+
+  /*MERGE-START*/
+  function canon(v) {
+    if (Array.isArray(v)) return '[' + v.map(canon).join(',') + ']';
+    if (v && typeof v === 'object') return '{' + Object.keys(v).sort().map(function (k) { return JSON.stringify(k) + ':' + canon(v[k]); }).join(',') + '}';
+    return JSON.stringify(v);
   }
-  async function pushNow() {
-    if (!ctx || !isCloudId(ctx.companyId)) return false;
-    var v = localStorage.getItem(cfg.dataKey(ctx.companyId)); if (v == null) return false;
+  function same(a, b) { return canon(a) === canon(b); }
+  function isObj(x) { return !!x && typeof x === 'object' && !Array.isArray(x); }
+  function idKeyFor(arrs) {
+    var cands = ['id', '_id', 'uid'];
+    for (var i = 0; i < cands.length; i++) {
+      var c = cands[i];
+      var ok = arrs.every(function (a) {
+        var seen = {};
+        return a.every(function (x) {
+          if (!isObj(x) || x[c] == null || x[c] === '') return false;
+          var k = String(x[c]); if (seen[k]) return false; seen[k] = 1; return true;
+        });
+      });
+      if (ok) return c;
+    }
+    return null;
+  }
+  function mergeArr(b, l, r) {
+    var k = idKeyFor([b, l, r]), out = [], seen = {};
+    if (k) {
+      var mb = {}, ml = {}, mr = {};
+      b.forEach(function (x) { mb[x[k]] = x; }); l.forEach(function (x) { ml[x[k]] = x; }); r.forEach(function (x) { mr[x[k]] = x; });
+      var take = function (id) {
+        if (seen[id]) return; seen[id] = 1;
+        var inB = id in mb, inL = id in ml, inR = id in mr;
+        if (inL && inR) out.push(merge3(mb[id], ml[id], mr[id]));
+        else if (inL) { if (!inB || !same(mb[id], ml[id])) out.push(ml[id]); }
+        else if (inR) { if (!inB || !same(mb[id], mr[id])) out.push(mr[id]); }
+      };
+      r.forEach(function (x) { take(x[k]); }); l.forEach(function (x) { take(x[k]); });
+      return out;
+    }
+    /* no ids: treat the array as a set of values */
+    var sb = {}, sl = {}, sr = {};
+    b.forEach(function (x) { sb[canon(x)] = 1; }); l.forEach(function (x) { sl[canon(x)] = 1; }); r.forEach(function (x) { sr[canon(x)] = 1; });
+    var add = function (x) {
+      var c = canon(x); if (seen[c]) return; seen[c] = 1;
+      var inB = c in sb, inL = c in sl, inR = c in sr;
+      if ((inL && inR) || (inL && !inB) || (inR && !inB)) out.push(x);
+    };
+    r.forEach(add); l.forEach(add);
+    return out;
+  }
+  function merge3(b, l, r, name) {
+    if (same(l, r)) return l;
+    if (same(b, l)) return r;
+    if (same(b, r)) return l;
+    if (Array.isArray(l) && Array.isArray(r)) return mergeArr(Array.isArray(b) ? b : [], l, r);
+    if (isObj(l) && isObj(r)) {
+      var bb = isObj(b) ? b : {}, out = {}, keys = {};
+      [l, r, bb].forEach(function (o) { Object.keys(o).forEach(function (k) { keys[k] = 1; }); });
+      Object.keys(keys).forEach(function (k) {
+        var inB = k in bb, inL = k in l, inR = k in r;
+        if (inL && inR) out[k] = merge3(bb[k], l[k], r[k], k);
+        else if (inL) { if (!inB || !same(bb[k], l[k])) out[k] = l[k]; }
+        else if (inR) { if (!inB || !same(bb[k], r[k])) out[k] = r[k]; }
+      });
+      return out;
+    }
+    if (typeof l === 'number' && typeof r === 'number' && /^(next|counter|seq)|(number|counter|seq)$/i.test(name || '')) return Math.max(l, r);
+    return l;
+  }
+  function mergeValue(baseStr, localStr, remoteStr) {
+    var p = function (s) { try { return JSON.parse(s); } catch (e) { return undefined; } };
+    var l = p(localStr), r = p(remoteStr);
+    if (l === undefined) return remoteStr;
+    if (r === undefined) return localStr;
+    return JSON.stringify(merge3(baseStr == null ? undefined : p(baseStr), l, r));
+  }
+  /*MERGE-END*/
+
+  async function getRow() {
+    var r = await req('acacia_app_data?select=value,updated_at&key=eq.data&company_id=eq.' + enc(ctx.companyId) + '&app=eq.' + enc(cfg.app));
+    if (!r.ok) throw err('offline', 'Could not read data (' + r.status + ')');
+    var j = await r.json(), row = j[0] || null;
+    if (row && typeof row.value !== 'string') row.value = JSON.stringify(row.value);
+    return row;
+  }
+  /* compare-and-swap write: succeeds only if the cloud copy still has updated_at = prevTs (or does not exist yet when prevTs is empty) */
+  async function casPush(v, prevTs) {
+    var now = new Date().toISOString(), r, j;
     try {
-      var r = await req('acacia_app_data?on_conflict=company_id,app,key', { method: 'POST', headers: Object.assign({}, H, { Prefer: 'resolution=merge-duplicates,return=representation' }), body: JSON.stringify({ company_id: ctx.companyId, app: cfg.app, key: 'data', value: v }) });
-      if (r.ok) { var j = await r.json(); rawSet.call(localStorage, tsKey(), (j[0] && j[0].updated_at) || ''); localStorage.removeItem(dirtyKey()); return true; }
+      if (!prevTs) {
+        r = await req('acacia_app_data', { method: 'POST', headers: Object.assign({}, H, { Prefer: 'return=representation' }), body: JSON.stringify({ company_id: ctx.companyId, app: cfg.app, key: 'data', value: v, updated_at: now }) });
+        if (r.status === 409) return 'conflict';
+      } else {
+        r = await req('acacia_app_data?key=eq.data&company_id=eq.' + enc(ctx.companyId) + '&app=eq.' + enc(cfg.app) + '&updated_at=eq.' + enc(prevTs), { method: 'PATCH', headers: Object.assign({}, H, { Prefer: 'return=representation' }), body: JSON.stringify({ value: v, updated_at: now }) });
+      }
+      if (!r.ok) return 'error';
+      j = await r.json();
+      if (!j[0]) return 'conflict';
+      return { ts: j[0].updated_at };
+    } catch (e) { return 'error'; }
+  }
+  function commit(v, ts) {
+    rawSet.call(localStorage, tsKey(), ts || '');
+    rawSet.call(localStorage, baseKey(), v);
+    localStorage.removeItem(dirtyKey());
+  }
+  async function syncNow() {
+    if (!ctx || !isCloudId(ctx.companyId) || syncBusy) return false;
+    syncBusy = true;
+    var changed = false;
+    try {
+      for (var n = 0; n < 4; n++) {
+        var dk = cfg.dataKey(ctx.companyId), local = localStorage.getItem(dk), res, row = await getRow();
+        var last = localStorage.getItem(tsKey()), dirty = localStorage.getItem(dirtyKey()) === '1';
+        if (!row) {
+          if (local == null) break;
+          res = await casPush(local, null);
+          if (res === 'conflict') continue;
+          if (res === 'error') break;
+          if (localStorage.getItem(dk) === local) commit(local, res.ts);
+          break;
+        }
+        if (row.updated_at === last) {                       /* cloud unchanged since our last sync */
+          if (!dirty || local == null) break;
+          if (local === row.value) { commit(local, row.updated_at); break; }
+          res = await casPush(local, row.updated_at);
+          if (res === 'conflict') continue;
+          if (res === 'error') break;
+          if (localStorage.getItem(dk) === local) commit(local, res.ts);
+          break;
+        }
+        if (!dirty || local == null) {                       /* cloud moved on, nothing of ours to keep: take the cloud copy */
+          rawSet.call(localStorage, dk, row.value); commit(row.value, row.updated_at); changed = true; break;
+        }
+        var merged = mergeValue(localStorage.getItem(baseKey()), local, row.value);
+        if (merged === row.value) {
+          if (localStorage.getItem(dk) === local) { rawSet.call(localStorage, dk, merged); commit(merged, row.updated_at); changed = true; }
+          break;
+        }
+        res = await casPush(merged, row.updated_at);
+        if (res === 'conflict') continue;
+        if (localStorage.getItem(dk) !== local) break;       /* edited while we were saving: leave it, the next sync merges it in */
+        rawSet.call(localStorage, dk, merged); changed = true;
+        if (res === 'error') { rawSet.call(localStorage, baseKey(), row.value); break; }
+        commit(merged, res.ts);
+        break;
+      }
     } catch (e) {}
-    return false;
+    syncBusy = false;
+    if (changed) applyRemote();
+    return changed;
   }
   function schedule() {
     if (!ctx || !isCloudId(ctx.companyId)) return;
     rawSet.call(localStorage, dirtyKey(), '1');
-    clearTimeout(timer); timer = setTimeout(pushNow, 2500);
+    clearTimeout(timer); timer = setTimeout(function () { syncNow(); }, 2500);
   }
+  /* page closing: one last compare-and-swap write; it only goes through if nobody else saved since our last sync (otherwise it stays unsaved and is merged next time) */
   function flush() {
     if (!ctx || !isCloudId(ctx.companyId) || localStorage.getItem(dirtyKey()) !== '1') return;
     clearTimeout(timer);
-    var v = localStorage.getItem(cfg.dataKey(ctx.companyId)); if (v == null) return;
+    var v = localStorage.getItem(cfg.dataKey(ctx.companyId)), last = localStorage.getItem(tsKey());
+    if (v == null || !last) return;
+    var dk = dirtyKey();
     try {
-      fetch(URL_ + '/rest/v1/acacia_app_data?on_conflict=company_id,app,key', { method: 'POST', keepalive: v.length < 60000, headers: Object.assign({}, H, { Prefer: 'resolution=merge-duplicates,return=minimal' }), body: JSON.stringify({ company_id: ctx.companyId, app: cfg.app, key: 'data', value: v }) }).then(function (r) { if (r.ok) localStorage.removeItem(dirtyKey()); }).catch(function () {});
+      fetch(URL_ + '/rest/v1/acacia_app_data?key=eq.data&company_id=eq.' + enc(ctx.companyId) + '&app=eq.' + enc(cfg.app) + '&updated_at=eq.' + enc(last), { method: 'PATCH', keepalive: v.length < 60000, headers: Object.assign({}, H, { Prefer: 'return=representation' }), body: JSON.stringify({ value: v, updated_at: new Date().toISOString() }) })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) { if (j && j.length) localStorage.removeItem(dk); })
+        .catch(function () {});
     } catch (e) {}
   }
-  async function pullData() {
-    var row = await pullRow(cfg.app);
-    var dirty = localStorage.getItem(dirtyKey()) === '1', last = localStorage.getItem(tsKey());
-    if (row && !dirty && row.updated_at !== last) { rawSet.call(localStorage, cfg.dataKey(ctx.companyId), row.value); rawSet.call(localStorage, tsKey(), row.updated_at); }
-    else if (!row) { if (localStorage.getItem(cfg.dataKey(ctx.companyId)) != null) await pushNow(); }
-    else if (dirty) await pushNow();
+  async function pullData() { await syncNow(); }
+
+  /* the app registers two callbacks: reload (re-read its in-memory data from storage) and render (redraw the current screen) */
+  function onRemote(reload, render) { hookReload = reload; hookRender = render; }
+  function typing() {
+    var a = document.activeElement;
+    return !!a && (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.isContentEditable) && a.type !== 'button' && a.type !== 'checkbox' && a.type !== 'radio';
   }
+  function paint() {
+    if (!pendingRender || typing()) return;
+    pendingRender = false;
+    try { if (hookRender) hookRender(); } catch (e) { console.error(e); }
+  }
+  function applyRemote() {
+    try { if (hookReload) hookReload(); } catch (e) { console.error(e); }
+    pendingRender = true; paint();
+  }
+  function startPoll() { clearInterval(syncTimer); syncTimer = setInterval(function () { if (document.hidden) return; paint(); syncNow(); }, 30000); }
+  function stopPoll() { clearInterval(syncTimer); syncTimer = 0; }
+
   /* read-only copies of another app's data (e.g. Expenses reads Payroll) */
   async function pullExtras() {
     var ex = cfg.readFrom || [];
@@ -283,10 +435,10 @@ function hpShowLogin(tab){
     if (!isCloudId(ctx.companyId)) return 'local';
     var msg = await gate(ctx.companyId, ctx.email); if (msg) return 'blocked:' + msg;
     try { await pullData(); await pullExtras(); } catch (e) {}
-    heartbeat(); clearInterval(hbTimer); hbTimer = setInterval(function () { heartbeat(); }, 3e5);
+    startPoll(); heartbeat(); clearInterval(hbTimer); hbTimer = setInterval(function () { heartbeat(); }, 3e5);
     return 'ok';
   }
-  function stop() { flush(); clearInterval(hbTimer); ctx = null; }
+  function stop() { flush(); stopPoll(); clearInterval(hbTimer); ctx = null; }
 
   function init(c) {
     cfg = c;
@@ -295,7 +447,7 @@ function hpShowLogin(tab){
       try { if (this === w.localStorage && ctx && k === cfg.dataKey(ctx.companyId)) schedule(); } catch (e) {}
     };
     w.addEventListener('pagehide', flush);
-    document.addEventListener('visibilitychange', function () { if (document.hidden) flush(); });
+    document.addEventListener('visibilitychange', function () { if (document.hidden) flush(); else syncNow(); });
   }
 
   /* sign-up plan note: reads #regPlan / #regBilling and shows what the company will pay */
@@ -308,564 +460,861 @@ function hpShowLogin(tab){
   };
   setTimeout(function () { try { if (w.acxPlanChanged) w.acxPlanChanged(); } catch (e) {} }, 0);
 
-  w.AcaciaCloud = { init: init, signIn: signIn, register: register, addUser: addUser, setRole: setRole, removeUser: removeUser, cacheUser: cacheUser, verifyLocal: verifyLocal, migrate: migrate, start: start, stop: stop, flush: flush, isCloudId: isCloudId, gate: gate, URL: URL_, KEY: KEY_, rpc: rpc, req: req };
+  w.AcaciaCloud = { onRemote: onRemote, sync: syncNow, init: init, signIn: signIn, register: register, addUser: addUser, setRole: setRole, removeUser: removeUser, cacheUser: cacheUser, verifyLocal: verifyLocal, migrate: migrate, start: start, stop: stop, flush: flush, isCloudId: isCloudId, gate: gate, URL: URL_, KEY: KEY_, rpc: rpc, req: req };
 })(window);
 ;
-/* ============ Shared auth linked to Acacia ERP (app 1707) ============ */
-const SESSION_KEY='acacia_session';
-function currentUser(){try{return JSON.parse(localStorage.getItem(SESSION_KEY)||'null')}catch{return null}}
-function initials(n){return (n||'?').split(/\s+/).map(s=>s[0]).slice(0,2).join('').toUpperCase()}
-function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]))}
-function toCompanyId(name){ return 'comp_' + String(name||'').toLowerCase().replace(/[^a-z0-9]/g,'_'); }
-function switchAuthTab(t){const s=t==='signin';
-  tabSignIn.classList.toggle('text-acacia-700',s);tabSignIn.classList.toggle('border-acacia-600',s);
-  tabSignIn.classList.toggle('text-slate-500',!s);tabSignIn.classList.toggle('border-transparent',!s);
-  tabSignUp.classList.toggle('text-acacia-700',!s);tabSignUp.classList.toggle('border-acacia-600',!s);
-  tabSignUp.classList.toggle('text-slate-500',s);tabSignUp.classList.toggle('border-transparent',s);
-  signinForm.classList.toggle('hidden',!s);signupForm.classList.toggle('hidden',s);}
+/* =========================================================
+   ACACIA PROJECTS — data model & state
+;
+/* =========================================================
+   ACACIA BUDGET — data model & state
+========================================================= */
+const STORAGE_KEY = 'acaciaBudgetData_v1';
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const BUDGET_TYPES = ['Annual','Monthly','Quarterly'];
+const PERIODS = ['Full year','Q1','Q2','Q3','Q4'].concat(MONTHS);
+const BUDGET_STATUSES = ['Draft','Pending Approval','Approved','Rejected','Closed'];
 
-/* Sidepanel toggle functions */
-function toggleAcaciaNotebook(){ document.getElementById('acaciaNotebookPanel')?.classList.toggle('hidden'); }
-function toggleWebinarPanel(){ document.getElementById('webinarPanel')?.classList.toggle('hidden'); }
-function toggleCommPanel(){ document.getElementById('commPanel')?.classList.toggle('hidden'); }
-function toggleSupportPopup(){ document.getElementById('supportPopup')?.classList.toggle('hidden'); }
-
-/* Supabase client (shared project with Acacia ERP) */
-const sb = window.supabase.createClient(window.__SUPA_URL__, window.__SUPA_KEY__);
-
-AcaciaCloud.init({app:'Plans', dataKey:function(c){ return 'acx_plans_local_' + c; }});
-const enc = encodeURIComponent;
-
-async function accountExists(email){
-  try{ const r = await AcaciaCloud.req('app_accounts?select=login_id&login_id=eq.' + enc(String(email).toLowerCase())); if(!r.ok) return false; return (await r.json()).length > 0; }catch(e){ return false; }
-}
-function authErr(el, msg){ el.textContent = msg; el.classList.remove('hidden'); }
-
-async function doSignIn(e){
-  e.preventDefault();
-  siError.classList.add('hidden');
-  const company=(siCompany.value||'').trim();
-  const email=(siEmail.value||'').trim().toLowerCase();
-  const pass=siPass.value;
-  if(!company||!email||!pass){ authErr(siError,'Please enter your company name, email and password.'); return; }
-  let u=null;
-  try{ u = await AcaciaCloud.signIn(email, pass, company); }
-  catch(err){ authErr(siError, err.code==='blocked' ? err.message : 'Could not reach Acacia. Check your internet connection and try again.'); return; }
-  if(!u){ authErr(siError,'That email and password combination was not found.'); return; }
-  localStorage.setItem(SESSION_KEY, JSON.stringify({ email:u.email, name:u.name, companyId:u.companyId, companyName:u.company }));
-  boot();
-}
-
-async function doSignUp(e){
-  e.preventDefault();
-  suError.classList.add('hidden');
-  const company=(suCompany.value||'').trim();
-  const email=(suEmail.value||'').trim().toLowerCase();
-  const pass=suPass.value;
-  if(!company||!email){ authErr(suError,'Company name and email are required.'); return; }
-  if(!pass||pass.length<6){ authErr(suError,'Password must be at least 6 characters.'); return; }
-  const fullName=((suFirst.value||'')+' '+(suLast.value||'')).trim()||email;
-  let r;
-  try{ r = await AcaciaCloud.register({company, name:fullName, email, password:pass, plan:(document.getElementById('regPlan')||{}).value||'', billing:(document.getElementById('regBilling')||{}).value||'monthly'}); }
-  catch(err){ authErr(suError, err.code==='exists' ? 'This company already has an account with that email - use Sign In instead.' : (err.code==='offline' ? 'Could not reach Acacia. Check your internet connection and try again.' : (err.message||'Could not create the account.'))); return; }
-  if(r.blocked){ authErr(suError,'Account created. ' + r.blocked); return; }
-  localStorage.setItem(SESSION_KEY, JSON.stringify({ email, name:fullName, companyId:r.companyId, companyName:company }));
-  boot();
-}
-
-function signOut(){AcaciaCloud.stop();localStorage.removeItem(SESSION_KEY);location.reload()}
-function toggleApps(){appsMenu.classList.toggle('hidden')}
-document.addEventListener('click',e=>{if(!e.target.closest('#appsMenu')&&!e.target.closest('button[onclick*=toggleApps]')) appsMenu?.classList.add('hidden')});
-
-/* ============ Company-scoped keys (matches app 1707's getCompanyKey) ============ */
-function currentCompanyId(){ const u=currentUser(); return u?.companyId || 'default_company'; }
-function scopedKey(k){ return k + '_' + currentCompanyId(); }
-
-/* Plans Hub modules: the same records Acacia Books uses in its Plans Hub
-   (Plan Hub, Plan Progress, Plan Revenue). Keys match Books' storage keys. */
-const MODULES = [
-  { id:'plans',     label:'Plan Hub',        key:'plans' },
-  { id:'ownership', label:'Ownership',       key:'planOwnerships',  link:'planTitle', group:'Plan Progress' },
-  { id:'progress',  label:'Track Progress',  key:'planProgress',    link:'title' },
-  { id:'expenses',  label:'Track Expenses',  key:'operationalCosts',link:'planTitle', readonly:true },
-  { id:'revisions', label:'Review & Revise', key:'planRevisions',   link:'title' },
-  { id:'actions',   label:'Action Plan',     key:'planActionItems', link:'title' },
-  { id:'revenue',   label:'Plan Revenue',    key:'planRevenue',     link:'planTitle', group:'Revenue' },
-  { id:'employees', label:'Employees',       key:'employees',       hidden:true, readonly:true },
-];
-
-const PRIORITY = ['High','Medium','Low'];
-const STATUS_OWN = ['Not Started','In Progress','Completed','On Hold'];
-const STATUS_PROG = ['Not Started','In Progress','Completed','Delayed','On Hold'];
-const GOALS = ['Increase Sales / Revenue','Strategic','Operational','Performance','Development','Cost Reduction'];
-
-/* Field layout per module (t: text | select | date | number | textarea | multi; o: options or 'employees') */
-const FIELDS = {
-  plans: [
-    { k:'title', l:'Plan title', req:1 },
-    { k:'department', l:'Department' },
-    { k:'goalType', l:'Goal type', t:'select', o:GOALS },
-    { k:'priority', l:'Priority', t:'select', o:PRIORITY },
-    { k:'startDate', l:'Start date', t:'date' },
-    { k:'endDate', l:'End date', t:'date' },
-    { k:'target', l:'Target' },
-    { k:'targetAmount', l:'Target amount (KES)', t:'number' },
-    { k:'linkedBudget', l:'Linked budget' },
-    { k:'description', l:'Description', t:'textarea' },
-  ],
-  ownership: [
-    { k:'owner', l:'Owner', t:'select', o:'employees' },
-    { k:'team', l:'Team', t:'multi', o:'employees' },
-    { k:'status', l:'Status', t:'select', o:STATUS_OWN },
-    { k:'date', l:'Date', t:'date' },
-  ],
-  progress: [
-    { k:'progress', l:'Progress %', t:'number', req:1 },
-    { k:'status', l:'Status', t:'select', o:STATUS_PROG },
-    { k:'person', l:'Updated by' },
-    { k:'comment', l:'Comment', t:'textarea' },
-  ],
-  revisions: [
-    { k:'action', l:'Action', t:'select', o:['Extend (new end date)','Revise','Close plan'] },
-    { k:'newEndDate', l:'New end date (for Extend)', t:'date' },
-    { k:'comment', l:'Comment', t:'textarea' },
-  ],
-  actions: [
-    { k:'item', l:'Action item', req:1 },
-    { k:'person', l:'Responsible person' },
-    { k:'due', l:'Due date', t:'date' },
-    { k:'priority', l:'Priority', t:'select', o:PRIORITY },
-    { k:'status', l:'Status', t:'select', o:STATUS_PROG },
-    { k:'notes', l:'Notes', t:'textarea' },
-  ],
-  revenue: [
-    { k:'customer', l:'Customer' },
-    { k:'amount', l:'Amount (KES)', t:'number', req:1 },
-    { k:'fund', l:'Bank / fund' },
-    { k:'note', l:'Note' },
-  ],
+const DEFAULT_SETTINGS = {
+  company: { name:'', address:'', phone:'', email:'', currency:'KES' },
+  departments: ['Administration','Finance','Operations','Sales & Marketing','IT'],
+  projectNames: [],
+  accounts: ['Salaries & Wages','Materials','Equipment','Travel','Marketing','Utilities','Professional Fees','Other'],
+  budgetNumberingPrefix: 'BUD-',
+  nextBudgetNumber: 1,
+  openingCash: 0
 };
+const DEFAULT_CATEGORIES = [['Sales Revenue','Income'],['Other Income','Income'],['Salaries & Wages','Expense'],['Materials & Supplies','Expense'],['Marketing','Expense'],['Utilities','Expense'],['Travel','Expense'],['Professional Fees','Expense'],['Equipment','Expense']];
 
-/* Table columns per module: [key, heading] */
-const COLS = {
-  ownership: [['owner','Owner'],['team','Team'],['status','Status'],['date','Date']],
-  progress:  [['progress','Progress'],['status','Status'],['person','Updated by'],['comment','Comment'],['date','Date']],
-  expenses:  [['date','Date'],['description','Description'],['category','Category'],['bank','Bank'],['amount','Amount']],
-  revisions: [['action','Action'],['comment','Comment'],['date','Date']],
-  actions:   [['item','Action item'],['person','Person'],['due','Due'],['priority','Priority'],['status','Status'],['notes','Notes']],
-  revenue:   [['source','Source'],['invoiceNumber','Invoice'],['customer','Customer'],['amount','Amount'],['fund','Bank / fund'],['date','Date']],
-};
-
-const store = {};                 // { moduleId: [rows] }
-let active = MODULES[0].id;
-
-function setSync(status, tone){
-  syncStatus.textContent = status;
-  const dot = syncDot; dot.className = 'inline-block w-2 h-2 rounded-full ' +
-    ({ok:'bg-emerald-500',busy:'bg-amber-400 animate-pulse',err:'bg-red-500',idle:'bg-slate-300'}[tone]||'bg-slate-300');
+function freshState(){
+  return {
+    budgets: [],
+    categories: DEFAULT_CATEGORIES.map(([name,type])=>({id:uid('categories'), name, type, description:'', createdAt:todayISO()})),
+    allocations: [], revisions: [], transfers: [], limits: [],
+    commitments: [], expenses: [], forecasts: [], approvalLog: [],
+    settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS))
+  };
+}
+let state = null;
+function dataKeyFor(companyId){ return STORAGE_KEY + '_' + companyId; }
+function loadState(companyId){
+  try{
+    const raw = localStorage.getItem(dataKeyFor(companyId));
+    if(!raw) return freshState();
+    const parsed = JSON.parse(raw), base = freshState();
+    return Object.assign(base, parsed, { settings: Object.assign(base.settings, parsed.settings||{}) });
+  }catch(e){ return freshState(); }
+}
+function saveState(){
+  if(!CURRENT_USER) return;
+  localStorage.setItem(dataKeyFor(CURRENT_USER.companyId), JSON.stringify(state));
 }
 
-let pullErr=null;
-async function pullOne(m){
-  try {
-    const r = await AcaciaCloud.req('company_state?select=value&company_id=eq.' + enc(currentCompanyId()) + '&key=eq.' + enc(m.key));
-    if(!r.ok) throw new Error('HTTP ' + r.status);
-    let v = ((await r.json())[0] || {}).value;
-    if(typeof v === 'string'){ try{ v = JSON.parse(v); }catch(e){ v = []; } }
-    store[m.id] = Array.isArray(v) ? v : [];
-  } catch(e) {
-    console.warn(`Failed pulling key ${m.key}:`, e);
-    pullErr=(e&&e.message)||String(e);
-    store[m.id] = [];
+/* ---------- Auth (shared login with Acacia Books apps) ---------- */
+const USERS_KEY = 'acaciaCrmUsers';
+const SESSION_KEY = 'acaciaCrmSession';
+let CURRENT_USER = null;
+
+AcaciaCloud.init({app:'Budget', dataKey:dataKeyFor});
+AcaciaCloud.onRemote(function(){ if(!CURRENT_USER) return; state = loadState(CURRENT_USER.companyId); if(!state.settings.company.name) state.settings.company.name = CURRENT_USER.company; }, function(){ if(!CURRENT_USER) return; render(); });
+function getUsers(){
+  try{ return JSON.parse(localStorage.getItem(USERS_KEY) || '[]'); }catch(e){ return []; }
+}
+function saveUsers(list){ localStorage.setItem(USERS_KEY, JSON.stringify(list)); }
+function getSession(){
+  try{ return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); }catch(e){ return null; }
+}
+function setSession(user){ localStorage.setItem(SESSION_KEY, JSON.stringify({email:user.email, companyId:user.companyId, name:user.name, company:user.company})); }
+function clearSession(){ localStorage.removeItem(SESSION_KEY); }
+
+function switchAuthTab(which){
+  document.getElementById('tabLoginBtn').classList.toggle('active', which==='login');
+  document.getElementById('tabRegisterBtn').classList.toggle('active', which==='register');
+  document.getElementById('loginPane').style.display = which==='login' ? 'block' : 'none';
+  document.getElementById('registerPane').style.display = which==='register' ? 'block' : 'none';
+  document.getElementById('loginError').classList.remove('show');
+  document.getElementById('registerError').classList.remove('show');
+}
+function showAuthError(id, msg){
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.classList.add('show');
+}
+async function handleRegister(){
+  const company = document.getElementById('regCompany').value.trim();
+  const name = document.getElementById('regName').value.trim();
+  const email = document.getElementById('regEmail').value.trim().toLowerCase();
+  const password = document.getElementById('regPassword').value;
+  if(!company || !name || !email || !password){ showAuthError('registerError','Please fill in every field.'); return; }
+  if(password.length < 6){ showAuthError('registerError','Password must be at least 6 characters.'); return; }
+  const users = getUsers();
+  let user, viaCloud = false;
+  try{
+    const c = await AcaciaCloud.register({company, name, email, password, plan:(document.getElementById('regPlan')||{}).value||'', billing:(document.getElementById('regBilling')||{}).value||'monthly'});
+    if(c.blocked){ showAuthError('registerError','Account created. ' + c.blocked); return; }
+    user = {companyId:c.companyId, company, name, email, role:'Administrator', passwordHash:c.passwordHash, passwordSalt:c.passwordSalt};
+    viaCloud = true;
+  }catch(e){
+    if(e.code === 'exists'){ showAuthError('registerError','This company already has an account with that email. Please sign in instead.'); return; }
+    if(e.code !== 'offline'){ showAuthError('registerError', e.message || 'Could not create the account. Please try again.'); return; }
+    if(users.some(u=>u.email===email)){ showAuthError('registerError','An account with that email already exists.'); return; }
+    user = {companyId:uid('co'), company, name, email, password, role:'Administrator'};   // offline: uploaded the next time you sign in online
   }
+  if(viaCloud) AcaciaCloud.cacheUser(USERS_KEY, user); else { users.push(user); saveUsers(users); }
+  setSession(user);
+  await enterApp(user);
 }
-async function pullAll(){
-  setSync('syncing…','busy');
+async function handleLogin(){
+  const email = document.getElementById('loginEmail').value.trim().toLowerCase();
+  const password = document.getElementById('loginPassword').value;
+  const company = (document.getElementById('loginCompany').value || '').trim();
+  if(!company || !email || !password){ showAuthError('loginError','Please enter your company name, email and password.'); return; }
+  let user = null;
   try{
-    pullErr=null;
-    await Promise.all(MODULES.map(pullOne));
-    const anyData = MODULES.some(m=>Array.isArray(store[m.id]) && store[m.id].length);
-    if(pullErr){ setSync('sync error · '+String(pullErr).slice(0,70),'err'); }
-    else if(!anyData){ setSync('connected · no Books data for company '+currentCompanyId(),'idle'); }
-    else { setSync('synced · '+(currentUser()?.companyName||'workspace'),'ok'); }
-    try{ syncStatus.title = 'Company ID: '+currentCompanyId()+(pullErr?' · '+pullErr:''); }catch(_){}
-    renderView();
-  }catch(e){ console.warn(e); setSync('sync error','err'); }
+    user = await AcaciaCloud.signIn(email, password, company);
+    if(user) AcaciaCloud.cacheUser(USERS_KEY, user);
+  }catch(e){
+    if(e.code === 'blocked'){ showAuthError('loginError', e.message); return; }
+  }
+  if(!user){
+    const users = getUsers();
+    for(const u of users){ if(u.email === email && String(u.company||'').trim().toLowerCase() === company.toLowerCase() && await AcaciaCloud.verifyLocal(u, password)){ user = u; break; } }
+    if(!user){ showAuthError('loginError','That email and password combination was not found.'); return; }
+    if(!AcaciaCloud.isCloudId(user.companyId)){
+      try{ const moved = await AcaciaCloud.migrate(user, password, users); if(moved){ saveUsers(users); user = moved; } }catch(e){ /* offline: stays on this device for now */ }
+    }
+  }
+  setSession(user);
+  await enterApp(user);
 }
-async function pushOne(m){
-  setSync('saving…','busy');
-  try{
-    const r = await AcaciaCloud.req('company_state?on_conflict=company_id,key', { method:'POST', headers:{ apikey:AcaciaCloud.KEY, Authorization:'Bearer '+AcaciaCloud.KEY, 'Content-Type':'application/json', Prefer:'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ company_id: currentCompanyId(), key: m.key, value: JSON.stringify(store[m.id]||[]), updated_at: new Date().toISOString() }) });
-    if(!r.ok) throw new Error('HTTP ' + r.status);
-  }catch(error){ setSync('save error','err'); alert('Save failed: '+error.message); return false; }
-  setSync('synced · '+(currentUser()?.companyName||'workspace'),'ok'); return true;
+function handleLogout(){
+  AcaciaCloud.stop();
+  clearSession();
+  CURRENT_USER = null;
+  state = null;
+  document.getElementById('app').classList.remove('ready');
+  hpShowHome();
+  document.getElementById('loginEmail').value = '';
+  document.getElementById('loginPassword').value = '';
+  switchAuthTab('login');
+}
+function initials(name){ return (name||'').split(' ').filter(Boolean).slice(0,2).map(s=>s[0].toUpperCase()).join(''); }
+
+async function enterApp(user){
+  let res = 'local';
+  try{ res = await AcaciaCloud.start(user); }catch(e){}
+  if(String(res).indexOf('blocked:') === 0){
+    try{ clearSession(); }catch(e){}
+    AcaciaCloud.stop();
+    alert(String(res).slice(8));
+    location.reload();
+    return;
+  }
+  return __enterAppLocal(user);
+}
+function __enterAppLocal(user){
+  if(!user.role) user.role = 'Administrator';
+  CURRENT_USER = user;
+  state = loadState(user.companyId);
+  if(!state.settings.company.name) state.settings.company.name = user.company;
+  document.getElementById('authScreen').style.display = 'none'; hpHideHome();
+  document.getElementById('app').classList.add('ready');
+  document.getElementById('sidebarUser').innerHTML = `<div style="font-weight:700;color:#fff;">${esc(user.name)}</div><div style="font-size:12px;">${esc(user.company)}</div>`;
+  renderNav();
+  route = {section:'budgetOverview', params:{}};
+  render();
+}
+function checkSessionOnLoad(){
+  const session = getSession();
+  if(session){
+    const users = getUsers();
+    const user = users.find(u=>u.email===session.email && u.companyId===session.companyId);
+    if(user){ enterApp(user); return; }
+  }
+  hpShowHome();
 }
 
-/* ============ Plans Hub views ============ */
-function cellText(v){ if(v==null) return ''; if(typeof v==='object') return JSON.stringify(v); return String(v); }
-
-let selPlan = '';        // title of the plan chosen in the picker
-let editIdx = null;      // index (in store[module]) of the record being edited
-
-const plansList = () => store.plans || [];
-const empNames = () => (store.employees || []).map(e => e && (e.name || e['Full Name'])).filter(Boolean);
-const nowStr = () => new Date().toLocaleString();
-const todayStr = () => new Date().toISOString().slice(0,10);
-const fmtKES = n => 'KES ' + (parseFloat(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
-const collected = t => (store.revenue||[]).filter(r => r && r.planTitle===t).reduce((s,r)=>s+(parseFloat(r.amount)||0),0);
-function curPlan(){
-  const ps = plansList();
-  if(!ps.some(p => p && p.title===selPlan)) selPlan = (ps[0] && ps[0].title) || '';
-  return ps.find(p => p && p.title===selPlan) || null;
+/* ---------- Theme (dark mode) ---------- */
+const THEME_KEY = 'acacia_theme';
+function toggleTheme(){
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  if(isDark){
+    document.documentElement.removeAttribute('data-theme');
+    try{ localStorage.setItem(THEME_KEY, 'light'); }catch(e){}
+  }else{
+    document.documentElement.setAttribute('data-theme', 'dark');
+    try{ localStorage.setItem(THEME_KEY, 'dark'); }catch(e){}
+  }
+  updateThemeToggleIcon();
 }
-function setPlan(v){ selPlan = v; renderView(); }
-function cell(k, v, row){
-  if(Array.isArray(v)) v = v.join(', ');
-  if(k==='progress' && v!=='' && v!=null) return escapeHtml(v + '%');
-  if(k==='amount' || k==='targetAmount') return escapeHtml((parseFloat(v)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}));
-  if(k==='source') return v==='invoice' ? '🧾 Invoice' : '✍️ Manual';
-  if(k==='bank') return escapeHtml(v || (row && row.currentAccName) || '');
-  return escapeHtml(cellText(v));
+function updateThemeToggleIcon(){
+  const btn = document.getElementById('themeToggle');
+  if(!btn) return;
+  btn.textContent = document.documentElement.getAttribute('data-theme') === 'dark' ? '☀️' : '🌙';
 }
-const statusBadge = s => `<span class="px-2 py-0.5 rounded-full text-[11px] font-semibold ${({'Completed':'bg-emerald-100 text-emerald-700','In Progress':'bg-blue-100 text-blue-700','Delayed':'bg-red-100 text-red-700','On Hold':'bg-amber-100 text-amber-700'}[s])||'bg-slate-100 text-slate-600'}">${escapeHtml(s||'Not Started')}</span>`;
+
+
+/* ---------- helpers ---------- */
+function uid(prefix){ return prefix + '_' + Math.random().toString(36).slice(2,9); }
+function esc(str){
+  if(str===undefined||str===null) return '';
+  return String(str).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function fmtMoney(n){ n = Number(n)||0; return state.settings.company.currency + ' ' + n.toLocaleString('en-KE',{maximumFractionDigits:0}); }
+function fmtDate(d){
+  if(!d) return '—';
+  const dt = new Date(d+'T00:00:00'); if(isNaN(dt)) return d;
+  return dt.toLocaleDateString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric'});
+}
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+function toast(msg){
+  const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast._h); toast._h = setTimeout(()=>t.classList.remove('show'), 2600);
+}
+const low = s => String(s==null?'':s).trim().toLowerCase();
+const sum = (arr,f) => arr.reduce((t,x)=>t+(Number(f(x))||0),0);
+const pct = (a,b) => b>0 ? a/b*100 : 0;
+const curYear = () => new Date().getFullYear();
+const byId = (list,id) => (state[list]||[]).find(x=>x.id===id);
+const budgetName = id => { const b=byId('budgets',id); return b ? b.name : '—'; };
+const catName = id => { const c=byId('categories',id); return c ? c.name : '—'; };
+const allocLabel = a => a ? a.kind+': '+a.target : '—';
+
+/* ---------- budget maths ---------- */
+const spentOfBudget = id => sum(state.expenses.filter(e=>e.budgetId===id), e=>e.amount);
+const committedOfBudget = id => sum(state.commitments.filter(c=>c.budgetId===id && c.status==='Open'), c=>c.amount);
+const spentOfAlloc = id => sum(state.expenses.filter(e=>e.allocationId===id), e=>e.amount);
+const committedOfAlloc = id => sum(state.commitments.filter(c=>c.allocationId===id && c.status==='Open'), c=>c.amount);
+function usageStatus(p){ return p>100 ? 'Over budget' : p>=80 ? 'Near limit' : 'On track'; }
+function usageColor(p){ return p>100 ? '#ef4444' : p>=80 ? '#f59e0b' : '#1f8a2e'; }
+function budgetStats(b){
+  const amount = Number(b.amount)||0, spent = spentOfBudget(b.id), committed = committedOfBudget(b.id);
+  return {amount, spent, committed, available: amount-spent-committed, variance: amount-spent, used: pct(spent+committed, amount), usedActual: pct(spent, amount)};
+}
+function allocStats(a){
+  const amount = Number(a.amount)||0, spent = spentOfAlloc(a.id), committed = committedOfAlloc(a.id);
+  return {amount, spent, committed, available: amount-spent-committed, variance: amount-spent, used: pct(spent+committed, amount)};
+}
+const approvedBudgets = () => state.budgets.filter(b=>b.status==='Approved');
+
+/* ---------- spending-limit checks (Budget Control > Spending Limits) ---------- */
+function periodMatch(period, d1, d2){
+  const a = new Date((d1||todayISO())+'T00:00:00'), b = new Date((d2||todayISO())+'T00:00:00');
+  if(a.getFullYear()!==b.getFullYear()) return false;
+  if(period==='Annual') return true;
+  if(period==='Quarterly') return Math.floor(a.getMonth()/3)===Math.floor(b.getMonth()/3);
+  return a.getMonth()===b.getMonth();
+}
+function limitPredicate(l){
+  const t = low(l.target);
+  return r => {
+    const al = byId('allocations', r.allocationId);
+    if(l.scope==='Budget') return low(budgetName(r.budgetId))===t;
+    if(l.scope==='Category') return low(catName(r.categoryId))===t;
+    return !!al && al.kind===l.scope && low(al.target)===t;
+  };
+}
+function checkLimits(d, selfId){
+  const out = {block:[], warn:[]}, amt = Number(d.amount)||0;
+  state.limits.filter(l=>l.active!=='No').forEach(l=>{
+    const match = limitPredicate(l); if(!match(d)) return;
+    const pool = state.expenses.concat(state.commitments.filter(c=>c.status==='Open'))
+      .filter(r=>r.id!==selfId && match(r) && periodMatch(l.period, r.date, d.date));
+    const total = sum(pool, r=>r.amount) + amt, cap = Number(l.limitAmount)||0;
+    if(total>cap){
+      const msg = `Spending limit reached for ${l.scope.toLowerCase()} "${l.target}" (${l.period.toLowerCase()} limit ${fmtMoney(cap)}, would reach ${fmtMoney(total)}).`;
+      (l.action==='Block' ? out.block : out.warn).push(msg);
+    }
+  });
+  return out;
+}
+let pendingWarn = null;
+function spendValidate(d, selfId){
+  const b = byId('budgets', d.budgetId);
+  if(!b) return 'Choose a budget.';
+  if(b.status!=='Approved') return 'This budget is "'+b.status+'". Only approved budgets can be spent against.';
+  if(d.allocationId){ const a = byId('allocations', d.allocationId); if(!a || a.budgetId!==d.budgetId) return 'That allocation belongs to a different budget.'; }
+  const r = checkLimits(d, selfId);
+  if(r.block.length) return r.block[0];
+  const st = budgetStats(b), extra = Number(d.amount)||0;
+  const warn = r.warn.slice();
+  if(st.spent+st.committed+extra > st.amount) warn.push('This takes "'+b.name+'" over its budget of '+fmtMoney(st.amount)+'.');
+  pendingWarn = warn.length ? warn[0] : null;
+  return null;
+}
+
+/* ---------- entity schemas ---------- */
+const budgetOpts = approvedOnly => () => state.budgets.filter(b=>!approvedOnly||b.status==='Approved').map(b=>({value:b.id,label:b.code+' · '+b.name}));
+const catOpts = type => () => { const t = type || (modalCtx&&modalCtx.record&&modalCtx.record.type); return state.categories.filter(c=>!t||c.type===t).map(c=>({value:c.id,label:c.name})); };
+const allocOpts = () => state.allocations.map(a=>({value:a.id,label:allocLabel(a)+' ('+budgetName(a.budgetId)+')'}));
+const targetOpts = () => { const k = modalCtx&&modalCtx.record&&modalCtx.record.kind, s = state.settings; return k==='Department' ? s.departments : k==='Project' ? s.projectNames : s.accounts; };
+
+const ENTITIES = {
+  budgets: {
+    label:'Budget', labelPlural:'Budgets',
+    defaults: ()=>({status:'Draft', year:curYear(), type:'Annual'}),
+    fields: [
+      {key:'name', label:'Budget Name', type:'text', required:true},
+      {key:'type', label:'Budget Type', type:'select', options:BUDGET_TYPES, required:true},
+      {key:'year', label:'Fiscal Year', type:'number', required:true},
+      {key:'period', label:'Period (Q1–Q4 or month; Annual = Full year)', type:'select', options:PERIODS},
+      {key:'categoryId', label:'Budget Category', type:'select', options:catOpts()},
+      {key:'amount', label:'Budget Amount', type:'number', required:true, min:0},
+      {key:'owner', label:'Budget Owner', type:'text'},
+      {key:'status', label:'Status', type:'select', options:BUDGET_STATUSES},
+      {key:'notes', label:'Notes', type:'textarea'}
+    ],
+    columns: ['code','name','type','period','year','categoryId','amount','used','status','flow'],
+    beforeSave(d){
+      const s = state.settings;
+      if(!d.code){ d.code = s.budgetNumberingPrefix + String(s.nextBudgetNumber++).padStart(4,'0'); }
+      if(d.type==='Annual') d.period = 'Full year';
+      else if(d.type==='Quarterly' && !/^Q[1-4]$/.test(d.period)) d.period = 'Q1';
+      else if(d.type==='Monthly' && MONTHS.indexOf(d.period)<0) d.period = MONTHS[new Date().getMonth()];
+      d.amount = Number(d.amount)||0; d.year = Number(d.year)||curYear();
+      if(!d.status) d.status = 'Draft';
+    },
+    validate(d){ if((Number(d.amount)||0)<0) return 'Budget amount cannot be negative.'; }
+  },
+  categories: {
+    label:'Category', labelPlural:'Categories',
+    defaults: ()=>({type:'Expense'}),
+    fields: [
+      {key:'name', label:'Category Name', type:'text', required:true},
+      {key:'type', label:'Type', type:'select', options:['Expense','Income'], required:true},
+      {key:'description', label:'Description', type:'textarea'}
+    ],
+    columns: ['name','type','description','budgetCount'],
+    validate(d, id){ if(state.categories.some(c=>c.id!==id && low(c.name)===low(d.name))) return 'A category with that name already exists.'; }
+  },
+  allocations: {
+    label:'Allocation', labelPlural:'Allocations',
+    fields: [
+      {key:'budgetId', label:'Budget', type:'select', options:budgetOpts(false), required:true},
+      {key:'target', label:'Allocated To', type:'combo', options:targetOpts, required:true, placeholder:'Pick or type a name'},
+      {key:'categoryId', label:'Category', type:'select', options:catOpts('Expense')},
+      {key:'amount', label:'Allocated Amount', type:'number', required:true, min:0},
+      {key:'notes', label:'Notes', type:'textarea'}
+    ],
+    columns: ['target','budgetId','categoryId','amount','spent','committed','remaining','used'],
+    validate(d, id){
+      const b = byId('budgets', d.budgetId); if(!b) return 'Choose a budget.';
+      const others = sum(state.allocations.filter(a=>a.id!==id && a.budgetId===d.budgetId && a.kind===d.kind), a=>a.amount);
+      if(others + (Number(d.amount)||0) > (Number(b.amount)||0)) return d.kind+' allocations would exceed the budget total of '+fmtMoney(b.amount)+' (already allocated: '+fmtMoney(others)+').';
+    }
+  },
+  revisions: {
+    label:'Revision', labelPlural:'Revisions',
+    defaults: ()=>({status:'Pending', date:todayISO()}),
+    fields: [
+      {key:'budgetId', label:'Budget', type:'select', options:budgetOpts(false), required:true},
+      {key:'date', label:'Date', type:'date'},
+      {key:'newAmount', label:'Revised Amount', type:'number', required:true, min:0},
+      {key:'reason', label:'Reason for Revision', type:'textarea', required:true}
+    ],
+    columns: ['date','budgetId','oldAmount','newAmount','change','reason','status','flow'],
+    beforeSave(d){ const b = byId('budgets', d.budgetId); if(b && !d.id && d.oldAmount===undefined) d.oldAmount = Number(b.amount)||0; if(!d.status) d.status='Pending'; d.newAmount = Number(d.newAmount)||0; }
+  },
+  transfers: {
+    label:'Transfer', labelPlural:'Transfers',
+    defaults: ()=>({status:'Pending', date:todayISO()}),
+    fields: [
+      {key:'fromAllocId', label:'From Allocation', type:'select', options:allocOpts, required:true},
+      {key:'toAllocId', label:'To Allocation', type:'select', options:allocOpts, required:true},
+      {key:'amount', label:'Amount', type:'number', required:true, min:0},
+      {key:'date', label:'Date', type:'date'},
+      {key:'reason', label:'Reason', type:'textarea'}
+    ],
+    columns: ['date','fromAllocId','toAllocId','amount','reason','status','flow'],
+    beforeSave(d){ if(!d.status) d.status='Pending'; d.amount = Number(d.amount)||0; },
+    validate(d){
+      if(d.fromAllocId===d.toAllocId) return 'Choose two different allocations.';
+      const f = byId('allocations', d.fromAllocId); if(f && (Number(d.amount)||0) > allocStats(f).available) return 'The source allocation only has '+fmtMoney(allocStats(f).available)+' available.';
+    }
+  },
+  limits: {
+    label:'Spending Limit', labelPlural:'Spending Limits',
+    defaults: ()=>({scope:'Category', period:'Monthly', action:'Warn', active:'Yes'}),
+    fields: [
+      {key:'scope', label:'Applies To', type:'select', options:['Category','Budget','Department','Project','Account'], required:true},
+      {key:'target', label:'Name (category, budget, department, project or account)', type:'text', required:true},
+      {key:'limitAmount', label:'Limit Amount', type:'number', required:true, min:0},
+      {key:'period', label:'Limit Period', type:'select', options:['Monthly','Quarterly','Annual'], required:true},
+      {key:'action', label:'When Exceeded', type:'select', options:['Warn','Block'], required:true},
+      {key:'active', label:'Active', type:'select', options:['Yes','No']}
+    ],
+    columns: ['scope','target','limitAmount','period','action','active','usage']
+  },
+  commitments: {
+    label:'Commitment', labelPlural:'Commitments',
+    defaults: ()=>({status:'Open', date:todayISO()}),
+    fields: [
+      {key:'date', label:'Date', type:'date', required:true},
+      {key:'reference', label:'Reference (PO / contract no.)', type:'text', required:true},
+      {key:'vendor', label:'Vendor / Supplier', type:'text'},
+      {key:'budgetId', label:'Budget', type:'select', options:budgetOpts(true), required:true},
+      {key:'allocationId', label:'Allocation (optional)', type:'select', options:allocOpts},
+      {key:'categoryId', label:'Category', type:'select', options:catOpts('Expense')},
+      {key:'amount', label:'Committed Amount', type:'number', required:true, min:0},
+      {key:'status', label:'Status', type:'select', options:['Open','Invoiced','Released']},
+      {key:'notes', label:'Notes', type:'textarea'}
+    ],
+    columns: ['date','reference','vendor','budgetId','allocationId','amount','status','flow'],
+    validate(d,id){ return d.status==='Open' ? spendValidate(d,id) : null; }
+  },
+  expenses: {
+    label:'Expense', labelPlural:'Expenses',
+    defaults: ()=>({date:todayISO()}),
+    fields: [
+      {key:'date', label:'Date', type:'date', required:true},
+      {key:'description', label:'Description', type:'text', required:true},
+      {key:'vendor', label:'Vendor / Payee', type:'text'},
+      {key:'budgetId', label:'Budget', type:'select', options:budgetOpts(true), required:true},
+      {key:'allocationId', label:'Allocation (optional)', type:'select', options:allocOpts},
+      {key:'categoryId', label:'Category', type:'select', options:catOpts('Expense')},
+      {key:'amount', label:'Amount Spent', type:'number', required:true, min:0}
+    ],
+    columns: ['date','description','vendor','budgetId','allocationId','categoryId','amount'],
+    validate(d,id){ return spendValidate(d,id); }
+  },
+  forecasts: {
+    label:'Forecast', labelPlural:'Forecasts',
+    defaults: ()=>({year:curYear(), month:MONTHS[new Date().getMonth()]}),
+    fields: [
+      {key:'year', label:'Year', type:'number', required:true},
+      {key:'month', label:'Month', type:'select', options:MONTHS, required:true},
+      {key:'categoryId', label:'Category', type:'select', options:catOpts()},
+      {key:'amount', label:'Forecast Amount', type:'number', required:true, min:0},
+      {key:'notes', label:'Notes', type:'textarea'}
+    ],
+    columns: ['year','month','categoryId','amount','notes'],
+    beforeSave(d){ d.year = Number(d.year)||curYear(); d.amount = Number(d.amount)||0; }
+  }
+};
+
+/* ---------- navigation ---------- */
+const NAV_GROUPS = [
+  {key:'dash', label:'Budget Dashboard', items:[['budgetOverview','Budget Overview'],['budgetUtilization','Budget Utilization'],['spendingSummary','Spending Summary']]},
+  {key:'mgmt', label:'Budget Management', items:[['createBudget','Create Budget'],['annualBudgets','Annual Budgets'],['monthlyBudgets','Monthly Budgets'],['quarterlyBudgets','Quarterly Budgets'],['budgetCategories','Budget Categories']]},
+  {key:'alloc', label:'Budget Allocations', items:[['accountAllocations','Account Allocations'],['departmentAllocations','Department Allocations'],['projectAllocations','Project Allocations']]},
+  {key:'ctrl', label:'Budget Control', items:[['budgetApprovals','Budget Approvals'],['budgetRevisions','Budget Revisions'],['budgetTransfers','Budget Transfers'],['spendingLimits','Spending Limits'],['committedExpenditure','Committed Expenditure']]},
+  {key:'fcst', label:'Forecasting', items:[['incomeForecast','Income Forecast'],['expenseForecast','Expense Forecast'],['cashFlowForecast','Cash Flow Forecast']]},
+  {key:'rpts', label:'Budget Reports', items:[['rptBudgetVsActual','Budget vs Actual'],['rptBudgetVariance','Budget Variance'],['rptUtilization','Budget Utilization Report'],['rptDepartment','Departmental Budget Report'],['rptProject','Project Budget Report']]}
+];
+const NAV = [].concat(...NAV_GROUPS.map(g=>g.items.map(([key,label])=>({key,label,group:g.key})))).concat([{key:'settings',label:'Settings'}]);
+const navLabel = key => (NAV.find(n=>n.key===key)||{}).label || key;
+const groupOf = key => (NAV.find(n=>n.key===key)||{}).group;
+let navOpen = {};
+let route = {section:'budgetOverview', params:{}};
 
 function renderNav(){
-  let last = '';
-  navList.innerHTML = MODULES.filter(m => !m.hidden).map(m => {
-    let head = '';
-    if(m.group && m.group !== last){ last = m.group; head = `<div class="text-[10px] font-bold uppercase text-slate-400 px-2 pt-4 pb-1">${escapeHtml(m.group)}</div>`; }
-    return head + `<button onclick="go('${m.id}')" class="nav-btn w-full text-left px-3 py-2 rounded-lg hover:bg-slate-100 ${m.id===active?'active':''}">${escapeHtml(m.label)}</button>`;
-  }).join('')
-    + `<div class="text-[10px] font-bold uppercase text-slate-400 px-2 pt-4 pb-1">Settings</div><button onclick="go('appearance')" class="nav-btn w-full text-left px-3 py-2 rounded-lg hover:bg-slate-100 ${active==='appearance'?'active':''}">🎨 Appearance</button>`;
+  const nav = document.getElementById('nav'), g0 = groupOf(route.section);
+  nav.innerHTML = NAV_GROUPS.map(g=>{
+    const open = navOpen[g.key]===undefined ? g.key===g0 : navOpen[g.key];
+    return `<div class="nav-group ${open?'open':''} ${g.key===g0?'has-active':''}">
+      <div class="nav-gh" onclick="toggleNavGroup('${g.key}')"><span>${esc(g.label)}</span><i class="chev">${open?'▾':'▸'}</i></div>
+      <div class="nav-gb" style="${open?'':'display:none'}">${g.items.map(([k,l])=>`<div class="nav-item ${route.section===k?'active':''}" onclick="goTo('${k}')"><span class="dot"></span>${esc(l)}</div>`).join('')}</div>
+    </div>`;
+  }).join('') + `<div class="nav-group"><div class="nav-item ${route.section==='settings'?'active':''}" onclick="goTo('settings')"><span class="dot"></span>Settings</div></div>`;
 }
-function go(id){ active = id; editIdx = null; renderNav(); renderView(); }
-
-function renderView(){
-  if(active==='appearance'){ view.innerHTML = '<div class="mb-4"><h2 class="text-2xl font-bold text-slate-800">🎨 Appearance</h2><p class="text-sm text-slate-500">Sidebar colour, text colour, font and font size.</p></div><div data-acacia-appearance></div>'; return; }
-  const m = MODULES.find(x => x.id===active);
-  if(m.id==='plans') return renderPlans(m);
-  return renderLinked(m);
-}
-
-/* ---- Plan Hub dashboard (KPIs, plan cards, portfolio, progress, actions, activity) ---- */
-function planDash(){
-  const A = ADX, C = A.C, ps = plansList().filter(Boolean), today = todayStr();
-  const prog = p => Math.max(0, Math.min(100, parseFloat(p.progress)||0));
-  const late = p => p.endDate && p.endDate < today && p.status !== 'Completed';
-  const done = ps.filter(p=>p.status==='Completed'), delayed = ps.filter(late);
-  const running = ps.filter(p=>p.status==='In Progress');
-  const avg = ps.length ? Math.round(ps.reduce((s,p)=>s+prog(p),0)/ps.length) : 0;
-  const upd = (store.progress||[]).filter(r=>r && r.date && !isNaN(new Date(r.date)));
-  const ms = A.months(6), byM = {};
-  upd.forEach(r=>{ const d = new Date(r.date), k = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); (byM[k] = byM[k]||[]).push(parseFloat(r.progress)||0); });
-  const trend = ms.map(m=>({l:m.l, v: byM[m.k] ? Math.round(byM[m.k].reduce((a,b)=>a+b,0)/byM[m.k].length) : null}));
-  let last = 0; trend.forEach(t=>{ if(t.v==null) t.v = last; else last = t.v; });
-  const acts = (store.actions||[]).filter(r=>r && r.due && r.status!=='Completed').sort((a,b)=>String(a.due).localeCompare(String(b.due))).slice(0,4);
-  const recent = [...upd].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,4);
-  const team = t => { const o = (store.ownership||[]).filter(r=>r && r.planTitle===t); return o.reduce((n,r)=>n+(Array.isArray(r.team)?r.team.length:0),0) || o.length; };
-  const idx = p => plansList().indexOf(p);
-  const cards = ps.slice(0,6).map(p=>`<div class="adx-plan"><h4>${escapeHtml(p.title)}</h4><p>${escapeHtml(p.department||p.goalType||'Plan')}</p>${A.hb('Progress', prog(p))}<div class="m"><span>Due: ${escapeHtml(p.endDate||'not set')}</span><span>${team(p.title)} team</span></div><div style="text-align:right;margin-top:6px"><button class="adx-btn" onclick="openPlan(${idx(p)})">View Plan</button></div></div>`).join('');
-  const rev = ps.filter(p=>parseFloat(p.targetAmount)>0).slice(0,5);
-  return `<div class="adx-wrap" style="margin-bottom:6px">
-  <div class="adx-grid adx-g4">
-    ${A.kpi({i:'file',l:'Total Plans',v:ps.length,d:`<div class="adx-d fl">${running.length} in progress</div>`})}
-    ${A.kpi({i:'folder',c:'b',l:'Active Plans',v:running.length})}
-    ${A.kpi({i:'check',c:'o',l:'Completed Plans',v:done.length})}
-    ${A.kpi({i:'clock',c:'p',l:'Average Progress',v:avg+'%',d:`<div class="adx-d ${delayed.length?'dn':'fl'}">${delayed.length} past due date</div>`})}
-  </div>
-  <div class="adx-grid adx-g21">
-    ${A.panel('Your Plans', ps.length ? `<div class="adx-plans">${cards}</div>` : '<div class="adx-empty">No plans yet. Click <b>+ New Plan</b> to create your first plan, or create one in Acacia Books.</div>', {i:'file'})}
-    <div style="display:flex;flex-direction:column;gap:14px;min-width:0">
-      ${A.panel('Plan Portfolio', ps.length ? A.donut([{v:running.length-delayed.filter(p=>p.status==='In Progress').length,c:C.g,l:'On Track'},{v:delayed.length,c:C.o,l:'Delayed'},{v:done.length,c:C.b,l:'Completed'},{v:ps.length-running.length-done.length-delayed.filter(p=>p.status!=='In Progress').length,c:C.gl,l:'Not started'}].map(x=>({...x,v:Math.max(0,x.v)})), ps.length, 'Plans') : '<div class="adx-empty">No plans yet.</div>', {i:'chart'})}
-      ${A.panel('Plan Progress', A.line(trend, {pct:true, max:100}), {i:'trend'})}
-    </div>
-  </div>
-  <div class="adx-grid adx-g111">
-    ${A.panel('Upcoming Actions', acts.length ? acts.map(a=>A.row('check', `${escapeHtml(a.item||'')}<div style="font-size:11.5px;color:var(--ax-mut)">${escapeHtml(a.title||'')}</div>`, escapeHtml(a.due), "go('actions')")).join('') : '<div class="adx-empty">No open action items.</div>', {i:'clock', link:['View all',"go('actions')"]})}
-    ${A.panel('Recent Activities', recent.length ? recent.map(r=>A.row('', `Progress ${escapeHtml(r.progress)}% on <b>${escapeHtml(r.title||'')}</b>`, escapeHtml(r.person||''), "go('progress')")).join('') : '<div class="adx-empty">Progress updates will show here.</div>', {i:'trend'})}
-    ${A.panel('Revenue vs Target', rev.length ? rev.map(p=>{ const t = parseFloat(p.targetAmount)||1; return A.hb(p.title, collected(p.title)/t*100, 'KES '+A.short(collected(p.title))+' / '+A.short(t)); }).join('') : '<div class="adx-empty">Set a target amount on a plan to track revenue.</div>', {i:'cash', link:['Revenue',"go('revenue')"]})}
-  </div>
-  </div>`;
+function toggleNavGroup(k){ const cur = navOpen[k]===undefined ? k===groupOf(route.section) : navOpen[k]; navOpen[k] = !cur; renderNav(); }
+function goTo(section, params){
+  route = {section, params: params||{}};
+  const g = groupOf(section); if(g) navOpen[g] = true;
+  renderNav(); render();
+  const m = document.querySelector('.main'); if(m) m.scrollTop = 0;
 }
 
-/* ---- Plan Hub: create plans + All Plans ---- */
-function renderPlans(m){
-  const ps = plansList();
-  const done = ps.filter(p => p.status==='Completed').length;
-  const run = ps.filter(p => p.status==='In Progress').length;
-  const target = ps.reduce((s,p)=>s+(parseFloat(p.targetAmount)||0),0);
-  const got = ps.reduce((s,p)=>s+collected(p.title),0);
-  view.innerHTML = `
-    <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
-      <div><h2 class="text-2xl font-bold text-slate-800">🗂️ Plan Hub</h2>
-        <p class="text-sm text-slate-500">Create plans and track them from start to finish · same plans as Acacia Books</p></div>
-      <div class="flex gap-2">
-        <input id="planSearch" oninput="filterPlans()" placeholder="Search plans…" class="h-9 px-3 text-sm border border-slate-200 rounded-lg outline-none"/>
-        <button onclick="exportCsv()" class="px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Export CSV</button>
-        <button onclick="openForm()" class="px-4 py-2 text-sm bg-acacia-600 hover:bg-acacia-700 text-white rounded-lg font-semibold">+ New Plan</button>
-      </div>
-    </div>
-    ${planDash()}
-    <h3 class="font-bold mb-2" style="font-family:var(--ax-serif);font-size:18px">All Plans</h3>
-    <div class="bg-white rounded-xl border border-slate-200 overflow-hidden"><div class="overflow-x-auto">
-      <table class="w-full text-sm"><thead class="bg-slate-50 text-left text-xs uppercase text-slate-500"><tr>
-        <th class="px-3 py-2">Plan</th><th class="px-3 py-2">Department</th><th class="px-3 py-2">Goal</th><th class="px-3 py-2">Priority</th>
-        <th class="px-3 py-2">Dates</th><th class="px-3 py-2 text-right">Target</th><th class="px-3 py-2 text-right">Collected</th>
-        <th class="px-3 py-2">Progress</th><th class="px-3 py-2">Status</th><th class="px-3 py-2">Owner</th><th class="px-3 py-2"></th></tr></thead>
-        <tbody id="plansBody"></tbody></table></div></div>`;
-  filterPlans();
+/* ---------- generic modal ---------- */
+let modalCtx = null;
+function openEntityModal(entityKey, recordId, preset){
+  const schema = ENTITIES[entityKey];
+  const rec = recordId ? state[entityKey].find(r=>r.id===recordId) : Object.assign({}, schema.defaults ? schema.defaults() : {}, preset||{});
+  modalCtx = {entityKey, recordId, record: Object.assign({}, rec)};
+  document.getElementById('modalTitle').textContent = (recordId?'Edit ':'New ') + schema.label;
+  document.getElementById('modalBody').innerHTML = schema.fields.map(f=>renderField(f, modalCtx.record)).join('');
+  const sb = document.getElementById('modalSaveBtn'); sb.onclick = saveEntityModal; sb.style.display = '';
+  document.getElementById('modalOverlay').classList.add('open');
 }
-function filterPlans(){
-  const q = ((document.getElementById('planSearch')||{}).value||'').toLowerCase();
-  const rows = plansList().map((p,i)=>({p,i})).filter(x => x.p && (!q || JSON.stringify(x.p).toLowerCase().includes(q)));
-  const body = document.getElementById('plansBody'); if(!body) return;
-  body.innerHTML = rows.length ? rows.map(({p,i}) => {
-    const pct = Math.max(0,Math.min(100,parseFloat(p.progress)||0));
-    return `<tr class="border-t border-slate-100 hover:bg-slate-50 align-top">
-      <td class="px-3 py-2 font-semibold">${escapeHtml(p.title)}</td><td class="px-3 py-2">${escapeHtml(p.department||'')}</td>
-      <td class="px-3 py-2">${escapeHtml(p.goalType||'')}</td><td class="px-3 py-2">${escapeHtml(p.priority||'')}</td>
-      <td class="px-3 py-2 whitespace-nowrap">${escapeHtml(p.startDate||'?')} → ${escapeHtml(p.endDate||'?')}</td>
-      <td class="px-3 py-2 text-right">${cell('targetAmount',p.targetAmount)}</td><td class="px-3 py-2 text-right">${cell('amount',collected(p.title))}</td>
-      <td class="px-3 py-2 min-w-[110px]"><div class="h-2 bg-slate-100 rounded-full overflow-hidden"><div class="h-2 bg-acacia-600" style="width:${pct}%"></div></div><div class="text-[11px] text-slate-500 mt-1">${pct}%</div></td>
-      <td class="px-3 py-2">${statusBadge(p.status)}</td><td class="px-3 py-2">${escapeHtml(p.owner||'')}</td>
-      <td class="px-3 py-2 acx-cell">${ACX_ACT({view:`openPlan('${i}')`, edit:`openForm(${i})`, clone:`cloneRow(${i})`, del:`delRow(${i})`, title:'Plan — '+(p.title||'')})}</td></tr>`;
-  }).join('') : `<tr><td colspan="11" class="text-center text-slate-400 py-10">No plans yet. Click <b>+ New Plan</b> to create your first plan, or create one in Acacia Books.</td></tr>`;
+function plainValue(entityKey, f, rec){
+  const v = rec[f.key]; if(v===undefined || v===null || v==='') return '—';
+  const m = {budgetId:budgetName, categoryId:catName};
+  if(m[f.key]) return m[f.key](v);
+  if(f.key==='allocationId'||f.key==='fromAllocId'||f.key==='toAllocId') return allocLabel(byId('allocations',v));
+  if(f.type==='date') return fmtDate(v);
+  if(/amount/i.test(f.key)) return fmtMoney(v);
+  return v;
 }
-function openPlan(i){ const p = plansList()[i]; if(p){ selPlan = p.title; go('ownership'); } }
-
-/* ---- Plan Progress / Revenue sub-modules (always for one chosen plan) ---- */
-function renderLinked(m){
-  const ps = plansList(), plan = curPlan();
-  if(!plan){
-    view.innerHTML = `<h2 class="text-2xl font-bold text-slate-800 mb-2">${escapeHtml(m.label)}</h2>
-      <div class="bg-white rounded-xl border border-slate-200 p-10 text-center text-slate-500">Create a plan first in the <b>Plan Hub</b>.<br><button onclick="go('plans')" class="mt-4 px-4 py-2 text-sm bg-acacia-600 hover:bg-acacia-700 text-white rounded-lg font-semibold">Go to Plan Hub</button></div>`;
-    return;
-  }
-  const rows = (store[m.id]||[]).map((r,i)=>({r,i})).filter(x => x.r && x.r[m.link]===plan.title);
-  const cols = COLS[m.id];
-  let extra = '';
-  if(m.id==='revenue'){
-    const got = collected(plan.title), tgt = parseFloat(plan.targetAmount)||0, pct = tgt ? Math.min(100,Math.round(got/tgt*100)) : 0;
-    extra = `<div class="bg-white rounded-xl border border-slate-200 p-4 mb-4 grid md:grid-cols-3 gap-4">
-      <div><div class="text-[11px] uppercase font-semibold text-slate-400">Collected</div><div class="text-lg font-bold">${fmtKES(got)}</div></div>
-      <div><div class="text-[11px] uppercase font-semibold text-slate-400">Target</div><div class="text-lg font-bold">${tgt?fmtKES(tgt):'—'}</div></div>
-      <div><div class="text-[11px] uppercase font-semibold text-slate-400">Achieved</div><div class="text-lg font-bold">${tgt?pct+'%':'—'}</div><div class="h-2 bg-slate-100 rounded-full mt-1 overflow-hidden"><div class="h-2 bg-emerald-500" style="width:${pct}%"></div></div></div></div>`;
-  }
-  if(m.id==='expenses'){
-    const tot = rows.reduce((s,x)=>s+(parseFloat(x.r.amount)||0),0);
-    extra = `<div class="bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-lg px-3 py-2 mb-4">Plan expenses are recorded as Operational Costs in Acacia Books so they post to your bank and ledger. They show here for this plan. Total: <b>${fmtKES(tot)}</b></div>`;
-  }
-  view.innerHTML = `
-    <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
-      <div><h2 class="text-2xl font-bold text-slate-800">${escapeHtml(m.label)}</h2>
-        <p class="text-sm text-slate-500">${rows.length} record${rows.length===1?'':'s'} for this plan · live from Acacia Books</p></div>
-      <div class="flex gap-2 items-center">
-        <select onchange="setPlan(this.value)" class="h-9 px-3 text-sm border border-slate-200 rounded-lg bg-white max-w-[260px]">
-          ${ps.map(p=>`<option value="${escapeHtml(p.title)}" ${p.title===plan.title?'selected':''}>${escapeHtml(p.title)}</option>`).join('')}</select>
-        <button onclick="exportCsv()" class="px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Export CSV</button>
-        ${m.readonly?'':`<button onclick="openForm()" class="px-4 py-2 text-sm bg-acacia-600 hover:bg-acacia-700 text-white rounded-lg font-semibold">+ New</button>`}
-      </div>
-    </div>
-    <div class="text-xs text-slate-500 mb-3">${escapeHtml(plan.startDate||'?')} → ${escapeHtml(plan.endDate||'?')} · ${statusBadge(plan.status)} · progress ${parseFloat(plan.progress)||0}%${plan.owner?' · owner '+escapeHtml(plan.owner):''}</div>
-    ${extra}
-    <div class="bg-white rounded-xl border border-slate-200 overflow-hidden"><div class="overflow-x-auto">
-      <table class="w-full text-sm"><thead class="bg-slate-50 text-left text-xs uppercase text-slate-500"><tr>
-        ${cols.map(c=>`<th class="px-3 py-2 ${c[0]==='amount'?'text-right':''}">${escapeHtml(c[1])}</th>`).join('')}<th class="px-3 py-2 acx-cell">Actions</th></tr></thead>
-        <tbody>${rows.length ? rows.map(({r,i}) => `<tr class="border-t border-slate-100 hover:bg-slate-50 align-top">
-          ${cols.map(c=>`<td class="px-3 py-2 max-w-xs ${c[0]==='amount'?'text-right':''}">${c[0]==='status'?statusBadge(r[c[0]]):cell(c[0],r[c[0]],r)}</td>`).join('')}
-          <td class="px-3 py-2 acx-cell">${m.readonly||m.id==='revenue' ? ACX_ACT({del: m.readonly?'':`delRow(${i})`}) : ACX_ACT({edit:`openForm(${i})`, clone:`cloneRow(${i})`, del:`delRow(${i})`})}</td></tr>`).join('')
-          : `<tr><td colspan="${cols.length+1}" class="text-center text-slate-400 py-10">${m.readonly?'No expenses logged against this plan yet.':'No records for this plan yet. Click <b>+ New</b> to add one.'}</td></tr>`}</tbody></table></div></div>`;
+function previewRecord(entityKey, id){
+  const schema = ENTITIES[entityKey], rec = state[entityKey].find(r=>r.id===id); if(!rec) return;
+  modalCtx = null;
+  document.getElementById('modalTitle').textContent = 'Preview ' + schema.label;
+  document.getElementById('modalBody').innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px 18px">' +
+    schema.fields.map(f=>`<div style="${f.type==='textarea'?'grid-column:1/-1;':''}"><div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#6b7280;margin-bottom:2px">${esc(f.label)}</div><div style="white-space:pre-wrap">${esc(plainValue(entityKey,f,rec))}</div></div>`).join('') + '</div>';
+  document.getElementById('modalSaveBtn').style.display = 'none';
+  document.getElementById('modalOverlay').classList.add('open');
 }
-
-/* ---- Add / edit form (modal) ---- */
-function openForm(i){
-  const m = MODULES.find(x => x.id===active); if(m.readonly) return;
-  editIdx = (i===undefined) ? null : i;
-  const old = editIdx!==null ? (store[m.id]||[])[editIdx] : null;
-  const names = empNames();
-  entryModalTitle.textContent = (old ? 'Edit ' : 'Add ') + (m.id==='plans' ? 'Plan' : m.label);
-  const cls = 'w-full px-3 rounded-lg border border-slate-300 outline-none text-sm focus:border-acacia-500 focus:ring-1 focus:ring-acacia-500';
-  entryModalFields.innerHTML = FIELDS[m.id].map(f => {
-    const v = old ? old[f.k] : (f.k==='date' ? todayStr() : (f.k==='status' ? 'Not Started' : (f.k==='priority' ? 'Medium' : '')));
-    let input;
-    if(f.t==='select'){
-      let opts = f.o==='employees' ? ['', ...names] : f.o;
-      if(v && !opts.includes(v)) opts = [...opts, v];
-      input = `<select data-field="${f.k}" class="${cls} h-10 bg-white">${opts.map(o=>`<option value="${escapeHtml(o)}" ${o===v?'selected':''}>${o===''?'-- Select --':escapeHtml(o)}</option>`).join('')}</select>`;
-    } else if(f.t==='multi'){
-      const sel = Array.isArray(v) ? v : [];
-      input = `<select data-field="${f.k}" multiple size="4" class="${cls} bg-white py-1">${names.map(o=>`<option value="${escapeHtml(o)}" ${sel.includes(o)?'selected':''}>${escapeHtml(o)}</option>`).join('')}</select>${names.length?'<p class="text-[11px] text-slate-400 mt-1">Hold Ctrl / Cmd to pick several.</p>':'<p class="text-[11px] text-slate-400 mt-1">Add employees in Acacia Books to pick a team.</p>'}`;
-    } else if(f.t==='textarea'){
-      input = `<textarea data-field="${f.k}" rows="3" class="${cls} py-2">${escapeHtml(v||'')}</textarea>`;
-    } else {
-      const lock = (m.id==='plans' && f.k==='title' && old) ? 'readonly title="The title links this plan\'s records, so it cannot be changed."' : '';
-      input = `<input data-field="${f.k}" type="${f.t||'text'}" ${f.t==='number'?'step="any" min="0"'+(f.k==='progress'?' max="100"':''):''} ${f.req?'required':''} ${lock} value="${escapeHtml(v==null?'':v)}" class="${cls} h-10 ${lock?'bg-slate-50':''}"/>`;
-    }
-    return `<div><label class="block text-xs font-semibold text-slate-600 mb-1">${escapeHtml(f.l)}</label>${input}</div>`;
-  }).join('');
-  entryModal.classList.remove('hidden');
+function cloneRecord(entityKey, id){
+  const schema = ENTITIES[entityKey], rec = state[entityKey].find(r=>r.id===id); if(!rec) return;
+  const copy = JSON.parse(JSON.stringify(rec));
+  copy.id = uid(entityKey); copy.createdAt = todayISO();
+  if(entityKey==='budgets'){ copy.name += ' (Copy)'; copy.code = ''; copy.status = 'Draft'; }
+  else if(typeof copy.name==='string') copy.name += ' (Copy)';
+  if(entityKey==='revisions'||entityKey==='transfers'||entityKey==='commitments') copy.status = entityKey==='commitments' ? 'Open' : 'Pending';
+  if(schema.beforeSave) schema.beforeSave(copy);
+  if(entityKey==='expenses'||entityKey==='commitments'){ const err = schema.validate(copy, null); if(err){ toast(err); return; } }
+  state[entityKey].push(copy); saveState(); toast(schema.label+' cloned.'); render();
 }
-function closeEntryModal(){ entryModal.classList.add('hidden'); entryModalForm.reset(); editIdx = null; }
-
-async function saveNewRecord(e){
-  e.preventDefault();
-  const m = MODULES.find(x => x.id===active), fields = FIELDS[m.id], rec = {};
-  fields.forEach(f => {
-    const el = entryModalFields.querySelector(`[data-field="${f.k}"]`); if(!el) return;
-    if(f.t==='multi') rec[f.k] = [...el.selectedOptions].map(o => o.value);
-    else if(f.t==='number') rec[f.k] = el.value==='' ? 0 : (parseFloat(el.value)||0);
-    else rec[f.k] = el.value.trim();
-  });
-  const rows = [...(store[m.id]||[])], old = editIdx!==null ? rows[editIdx] : null;
-  let plan = null, touchPlans = false;
-
-  if(m.id==='plans'){
-    if(!rec.title) return alert('Please enter a plan title.');
-    if(!old && plansList().some(p => p.title===rec.title)) return alert('A plan with this title already exists.');
-    if(old) rows[editIdx] = Object.assign({}, old, rec, { title: old.title });
-    else rows.push(Object.assign({ progress:0, status:'Not Started', owner:'', team:[], dateCreated:nowStr() }, rec));
-    if(!old) selPlan = rec.title;
-  } else {
-    plan = curPlan(); if(!plan) return alert('Create/select a plan first.');
-    rec[m.link] = plan.title;
-    if(m.id==='ownership'){ rec.date = rec.date || todayStr(); Object.assign(plan,{owner:rec.owner,team:rec.team,status:rec.status}); touchPlans = true; }
-    if(m.id==='progress'){ rec.progress = Math.max(0,Math.min(100,rec.progress)); rec.date = nowStr(); Object.assign(plan,{progress:rec.progress,status:rec.status}); touchPlans = true; }
-    if(m.id==='revisions'){ rec.date = nowStr(); if(/^Extend/.test(rec.action) && rec.newEndDate){ plan.endDate = rec.newEndDate; touchPlans = true; } }
-    if(m.id==='actions'){ rec.date = old ? old.date : nowStr(); }
-    if(m.id==='revenue'){
-      if(rec.amount<=0) return alert('Enter an amount greater than zero.');
-      Object.assign(rec,{ id:Date.now()+Math.random(), source:'manual', invoiceNumber:'', invDate:'', date:nowStr() });
-    }
-    if(old) rows[editIdx] = Object.assign({}, old, rec); else rows.push(rec);
-  }
-  store[m.id] = rows;
-  if(m.id==='revenue') touchPlans = syncRevenueProgress(plan) || touchPlans;
-  closeEntryModal();
-
-  let ok = await pushOne(m);
-  if(ok && touchPlans) ok = await pushOne(MODULES[0]);
-  if(ok) renderView(); else await Promise.all([pullOne(m), pullOne(MODULES[0])]).then(renderView);
+function renderField(f, record){
+  const val = record[f.key]!==undefined ? record[f.key] : '', id = 'f_'+f.key;
+  const opts = () => (typeof f.options==='function' ? f.options() : (f.options||[])).map(o=>typeof o==='string'?{value:o,label:o}:o);
+  if(f.type==='select') return `<div class="field"><label>${esc(f.label)}${f.required?' *':''}</label><select id="${id}" data-key="${f.key}"><option value="">— Select —</option>${opts().map(o=>`<option value="${esc(o.value)}" ${String(val)===String(o.value)?'selected':''}>${esc(o.label)}</option>`).join('')}</select></div>`;
+  if(f.type==='combo') return `<div class="field"><label>${esc(f.label)}${f.required?' *':''}</label><input id="${id}" data-key="${f.key}" list="dl_${f.key}" value="${esc(val)}" placeholder="${esc(f.placeholder||'')}"><datalist id="dl_${f.key}">${opts().map(o=>`<option value="${esc(o.value)}">`).join('')}</datalist></div>`;
+  if(f.type==='textarea') return `<div class="field"><label>${esc(f.label)}</label><textarea id="${id}" data-key="${f.key}" placeholder="${esc(f.placeholder||'')}">${esc(val)}</textarea></div>`;
+  return `<div class="field"><label>${esc(f.label)}${f.required?' *':''}</label><input id="${id}" data-key="${f.key}" type="${f.type}" value="${esc(val)}" placeholder="${esc(f.placeholder||'')}" ${f.min!==undefined?`min="${f.min}"`:''}></div>`;
 }
-
-/* Books' rule: when a target amount is set, progress follows revenue collected */
-function syncRevenueProgress(plan){
-  if(!plan) return false;
-  const got = collected(plan.title), tgt = parseFloat(plan.targetAmount)||0;
-  if(tgt<=0) return false;
-  plan.progress = Math.min(100, Math.round(got/tgt*100));
-  plan.status = plan.progress>=100 ? 'Completed' : plan.progress>0 ? 'In Progress' : plan.status;
+/* validates, normalises and stores one record; returns true when saved */
+function commitRecord(entityKey, draft, recordId){
+  const schema = ENTITIES[entityKey];
+  if(schema.fields.some(f=>f.required && (draft[f.key]===undefined||draft[f.key]===''))){ toast('Please fill the required fields.'); return false; }
+  pendingWarn = null;
+  const err = schema.validate && schema.validate(draft, recordId);
+  if(err){ toast(err); return false; }
+  if(schema.beforeSave) schema.beforeSave(draft);
+  if(entityKey==='expenses' && draft.allocationId && !draft.categoryId){ const a = byId('allocations',draft.allocationId); if(a) draft.categoryId = a.categoryId||''; }
+  if(recordId){ const i = state[entityKey].findIndex(r=>r.id===recordId); state[entityKey][i] = Object.assign(state[entityKey][i], draft); }
+  else { draft.id = uid(entityKey); draft.createdAt = todayISO(); state[entityKey].push(draft); }
+  saveState();
   return true;
 }
-
-/* Clone — same as Books: copy the record, plans get a unique "(copy)" title */
-async function cloneRow(i){
-  const m = MODULES.find(x => x.id===active); if(!m || m.readonly || m.id==='revenue') return;
-  const src = (store[m.id]||[])[i]; if(!src) return;
-  const copy = JSON.parse(JSON.stringify(src));
-  if(m.id==='plans'){
-    let t = (src.title||'Plan')+' (copy)', n = 2;
-    while(plansList().some(p => p.title===t)) t = (src.title||'Plan')+' (copy '+(n++)+')';
-    Object.assign(copy,{ title:t, progress:0, status:'Not Started', dateCreated:nowStr() });
-  } else { copy.date = nowStr(); delete copy.id; }
-  store[m.id] = [...(store[m.id]||[]), copy];
-  if(await pushOne(m)) renderView(); else await pullOne(m).then(renderView);
+function saveEntityModal(){
+  const {entityKey, recordId, record} = modalCtx, draft = Object.assign({}, record);
+  document.querySelectorAll('#modalBody [data-key]').forEach(inp=>{ draft[inp.dataset.key] = inp.value; });
+  if(!commitRecord(entityKey, draft, recordId)) return;
+  const label = ENTITIES[entityKey].label;
+  closeModal(); toast(pendingWarn ? label+' saved. Note: '+pendingWarn : label+(recordId?' updated.':' created.')); render();
 }
-async function delRow(i){
-  const m = MODULES.find(x => x.id===active); if(m.readonly) return;
-  const msg = m.id==='plans' ? 'Delete this plan? Records already linked to it (progress, revenue, etc.) are kept in Acacia Books.' : 'Delete this record from Acacia Books?';
-  if(!confirm(msg)) return;
-  store[m.id].splice(i,1);
-  let touch = false;
-  if(m.id==='revenue') touch = syncRevenueProgress(curPlan());
-  let ok = await pushOne(m);
-  if(ok && touch) ok = await pushOne(MODULES[0]);
-  if(ok) renderView(); else await Promise.all([pullOne(m), pullOne(MODULES[0])]).then(renderView);
+function closeModal(){
+  document.getElementById('modalOverlay').classList.remove('open');
+  const sb = document.getElementById('modalSaveBtn'); if(sb) sb.style.display = '';
+  modalCtx = null;
+}
+function deleteRecord(entityKey, id){
+  const dependents = entityKey==='budgets' ? ['allocations','expenses','commitments','revisions'].filter(k=>state[k].some(r=>r.budgetId===id)) : entityKey==='allocations' ? ['expenses','commitments'].filter(k=>state[k].some(r=>r.allocationId===id)) : [];
+  if(dependents.length){ toast('Cannot delete: it is still used by '+dependents.join(', ')+'. Remove those first.'); return; }
+  if(!confirm('Delete this '+ENTITIES[entityKey].label.toLowerCase()+'? This cannot be undone.')) return;
+  state[entityKey] = state[entityKey].filter(r=>r.id!==id); saveState(); toast(ENTITIES[entityKey].label+' deleted.'); render();
 }
 
-function exportCsv(){
-  const m = MODULES.find(x => x.id===active);
-  let head, lines;
-  if(m.id==='plans'){
-    head = FIELDS.plans.map(f=>f.k).concat(['progress','status','owner']);
-    lines = plansList().map(p => head.map(c => JSON.stringify(cellText(p[c]))).join(','));
-  } else {
-    const plan = curPlan(); if(!plan) return;
-    const cols = COLS[m.id].map(c=>c[0]);
-    head = cols;
-    lines = (store[m.id]||[]).filter(r => r && r[m.link]===plan.title).map(r => cols.map(c => JSON.stringify(cellText(r[c]))).join(','));
+/* ---------- generic table ---------- */
+const COLUMN_LABELS = {code:'Code', name:'Name', type:'Type', period:'Period', year:'Year', month:'Month', categoryId:'Category', amount:'Amount', used:'% Used', status:'Status', flow:'Action',
+  description:'Description', budgetCount:'Budgets', target:'Allocated To', budgetId:'Budget', spent:'Spent', committed:'Committed', remaining:'Remaining', date:'Date', oldAmount:'Current', newAmount:'Revised', change:'Change', reason:'Reason',
+  fromAllocId:'From', toAllocId:'To', scope:'Applies To', limitAmount:'Limit', action:'When Exceeded', active:'Active', usage:'Used So Far', reference:'Reference', vendor:'Vendor', allocationId:'Allocation', notes:'Notes'};
+const usageBar = p => `<div class="progress-row" style="min-width:110px"><div class="progress-track"><div class="progress-fill" style="width:${Math.min(100,Math.max(0,p))}%;background:${usageColor(p)}"></div></div><span class="pct">${p.toFixed(0)}%</span></div>`;
+const flowBtn = (ek,id,dec,label,cls) => `<button class="btn small ${cls||''}" onclick="event.stopPropagation();decide('${ek}','${id}','${dec}')">${label}</button>`;
+function cellValue(ek, col, rec){
+  const st = ek==='budgets' ? budgetStats(rec) : ek==='allocations' ? allocStats(rec) : null;
+  switch(col){
+    case 'budgetId': return esc(budgetName(rec.budgetId));
+    case 'categoryId': return esc(catName(rec.categoryId));
+    case 'allocationId': case 'fromAllocId': case 'toAllocId': return esc(allocLabel(byId('allocations', rec[col])));
+    case 'amount': case 'oldAmount': case 'newAmount': case 'limitAmount': return fmtMoney(rec[col]);
+    case 'change': { const d = (Number(rec.newAmount)||0)-(Number(rec.oldAmount)||0); return `<span style="color:${d<0?'var(--danger)':'var(--success)'}">${d>0?'+':''}${fmtMoney(d)}</span>`; }
+    case 'date': return fmtDate(rec.date);
+    case 'status': return `<span class="badge status-${esc((rec.status||'').replace(/ /g,'.'))}">${esc(rec.status||'—')}</span>`;
+    case 'used': return st ? usageBar(st.used) : '—';
+    case 'spent': return st ? fmtMoney(st.spent) : '—';
+    case 'committed': return st ? fmtMoney(st.committed) : '—';
+    case 'remaining': return st ? `<span style="color:${st.available<0?'var(--danger)':'var(--success)'}">${fmtMoney(st.available)}</span>` : '—';
+    case 'budgetCount': return String(state.budgets.filter(b=>b.categoryId===rec.id).length);
+    case 'active': return rec.active==='No' ? 'No' : 'Yes';
+    case 'usage': { const m = limitPredicate(rec), pool = state.expenses.concat(state.commitments.filter(c=>c.status==='Open')).filter(r=>m(r) && periodMatch(rec.period, r.date, todayISO())); return usageBar(pct(sum(pool,r=>r.amount), Number(rec.limitAmount)||0)); }
+    case 'flow':
+      if(ek==='budgets') return rec.status==='Draft'||rec.status==='Rejected' ? flowBtn(ek,rec.id,'Submit','Submit') : rec.status==='Pending Approval' ? flowBtn(ek,rec.id,'Approved','Approve','primary')+' '+flowBtn(ek,rec.id,'Rejected','Reject') : rec.status==='Approved' ? flowBtn(ek,rec.id,'Closed','Close') : '';
+      if(ek==='commitments') return rec.status==='Open' ? flowBtn(ek,rec.id,'Invoiced','Invoiced')+' '+flowBtn(ek,rec.id,'Released','Release') : '';
+      return rec.status==='Pending' ? flowBtn(ek,rec.id,'Approved','Approve','primary')+' '+flowBtn(ek,rec.id,'Rejected','Reject') : '';
   }
-  const a = document.createElement('a'); a.href = 'data:text/csv,' + encodeURIComponent([head.join(','), ...lines].join('\n')); a.download = m.key + '.csv'; a.click();
+  return esc(rec[col]===undefined||rec[col]==='' ? '—' : rec[col]);
+}
+function renderEntityTable(ek, records, opts){
+  opts = opts||{}; const schema = ENTITIES[ek], cols = opts.columns || schema.columns;
+  const preset = opts.preset ? JSON.stringify(opts.preset).replace(/"/g,'&quot;') : 'null';
+  if(!records.length) return `<div class="empty-state"><div class="title">No ${schema.labelPlural.toLowerCase()} yet</div><div>${esc(opts.emptyHint||('Create your first '+schema.label.toLowerCase()+' to get started.'))}</div><button class="btn primary" onclick="openEntityModal('${ek}', null, ${preset})">+ New ${schema.label}</button></div>`;
+  return `<div style="overflow-x:auto"><table><thead><tr>${cols.map(c=>`<th>${COLUMN_LABELS[c]||c}</th>`).join('')}<th></th></tr></thead><tbody>${records.map(rec=>`<tr>${cols.map(c=>`<td>${cellValue(ek,c,rec)}</td>`).join('')}<td class="row-actions acx-cell">${ACX_ACT({view:`previewRecord('${ek}','${rec.id}')`, edit:`openEntityModal('${ek}','${rec.id}')`, clone:`cloneRecord('${ek}','${rec.id}')`, del:`deleteRecord('${ek}','${rec.id}')`})}</td></tr>`).join('')}</tbody></table></div>`;
+}
+function setHeader(eyebrow, title, actionsHtml){
+  document.getElementById('pageEyebrow').textContent = eyebrow;
+  document.getElementById('pageTitle').textContent = title;
+  document.getElementById('topActions').innerHTML = actionsHtml || '';
+}
+const newBtn = (ek, label, preset) => `<button class="btn primary" onclick="openEntityModal('${ek}', null, ${preset?JSON.stringify(preset).replace(/"/g,'&quot;'):'null'})">+ ${label||'New '+ENTITIES[ek].label}</button>`;
+const tabsHtml = (items, active, fn) => `<div class="tabs"><div class="tab ${!active?'active':''}" onclick="${fn('')}">All</div>${items.map(s=>`<div class="tab ${String(active)===String(s)?'active':''}" onclick="${fn(s)}">${esc(s)}</div>`).join('')}</div>`;
+
+/* ---------- workflow: approvals, revisions, transfers, commitments ---------- */
+function logApproval(kind, ref, decision, note){ state.approvalLog.push({id:uid('log'), date:todayISO(), kind, ref, decision, by:(CURRENT_USER&&CURRENT_USER.name)||'', note:note||''}); }
+function decide(ek, id, decision){
+  const rec = byId(ek, id); if(!rec) return;
+  if(ek==='budgets'){
+    if(decision==='Submit'){ rec.status = 'Pending Approval'; logApproval('Budget', rec.code+' '+rec.name, 'Submitted'); toast('Submitted for approval.'); }
+    else { rec.status = decision; logApproval('Budget', rec.code+' '+rec.name, decision); toast('Budget '+decision.toLowerCase()+'.'); }
+  } else if(ek==='revisions'){
+    if(decision==='Approved'){ const b = byId('budgets', rec.budgetId); if(b){ b.amount = Number(rec.newAmount)||0; } }
+    rec.status = decision; logApproval('Revision', budgetName(rec.budgetId), decision, rec.reason); toast('Revision '+decision.toLowerCase()+'.');
+  } else if(ek==='transfers'){
+    if(decision==='Approved'){
+      const f = byId('allocations', rec.fromAllocId), t = byId('allocations', rec.toAllocId), a = Number(rec.amount)||0;
+      if(!f||!t){ toast('One of the allocations no longer exists.'); return; }
+      if(a > allocStats(f).available){ toast('The source allocation only has '+fmtMoney(allocStats(f).available)+' available.'); return; }
+      f.amount = (Number(f.amount)||0)-a; t.amount = (Number(t.amount)||0)+a;
+    }
+    rec.status = decision; logApproval('Transfer', allocLabel(byId('allocations',rec.fromAllocId))+' → '+allocLabel(byId('allocations',rec.toAllocId)), decision, rec.reason); toast('Transfer '+decision.toLowerCase()+'.');
+  } else if(ek==='commitments'){ rec.status = decision; toast('Commitment marked '+decision.toLowerCase()+'.'); }
+  saveState(); render();
 }
 
-/* ============ Acacia Mail bridge ============ */
-const MAIL_DATA_PREFIX = 'acacia_data_';
-function openMail(){ mmStatus.textContent=''; mmTo.value=''; mmSubject.value=''; mmBody.value=''; mailModal.classList.remove('hidden'); }
-function closeMail(){ mailModal.classList.add('hidden'); }
-function loadMailbox(email){
-  try{ return JSON.parse(localStorage.getItem(MAIL_DATA_PREFIX+email)) || {mails:[],events:[],aiChat:[]}; }
-  catch{ return {mails:[],events:[],aiChat:[]}; }
+
+/* =========================================================
+   Pages
+========================================================= */
+const SECTION_META = {
+  budgetOverview:['Budget Dashboard','Budget Overview'], budgetUtilization:['Budget Dashboard','Budget Utilization'], spendingSummary:['Budget Dashboard','Spending Summary'],
+  createBudget:['Budget Management','Create Budget'], annualBudgets:['Budget Management','Annual Budgets'], monthlyBudgets:['Budget Management','Monthly Budgets'], quarterlyBudgets:['Budget Management','Quarterly Budgets'], budgetCategories:['Budget Management','Budget Categories'],
+  accountAllocations:['Budget Allocations','Account Allocations'], departmentAllocations:['Budget Allocations','Department Allocations'], projectAllocations:['Budget Allocations','Project Allocations'],
+  budgetApprovals:['Budget Control','Budget Approvals'], budgetRevisions:['Budget Control','Budget Revisions'], budgetTransfers:['Budget Control','Budget Transfers'], spendingLimits:['Budget Control','Spending Limits'], committedExpenditure:['Budget Control','Committed Expenditure'],
+  incomeForecast:['Forecasting','Income Forecast'], expenseForecast:['Forecasting','Expense Forecast'], cashFlowForecast:['Forecasting','Cash Flow Forecast'],
+  rptBudgetVsActual:['Budget Reports','Budget vs Actual'], rptBudgetVariance:['Budget Reports','Budget Variance'], rptUtilization:['Budget Reports','Budget Utilization Report'], rptDepartment:['Budget Reports','Departmental Budget Report'], rptProject:['Budget Reports','Project Budget Report'],
+  settings:['Configuration','Settings']
+};
+function render(){
+  const c = document.getElementById('content'), s = route.section, m = SECTION_META[s]; if(!m || !state) return;
+  const fn = {
+    budgetOverview:renderOverview, budgetUtilization:renderUtilization, spendingSummary:renderSpending,
+    createBudget:renderCreateBudget, annualBudgets:c=>renderBudgetList(c,'Annual'), monthlyBudgets:c=>renderBudgetList(c,'Monthly'), quarterlyBudgets:c=>renderBudgetList(c,'Quarterly'), budgetCategories:renderCategories,
+    accountAllocations:c=>renderAllocations(c,'Account'), departmentAllocations:c=>renderAllocations(c,'Department'), projectAllocations:c=>renderAllocations(c,'Project'),
+    budgetApprovals:renderApprovals, budgetRevisions:c=>renderSimple(c,'revisions','Record a revision to change an approved budget amount. It takes effect when approved.'), budgetTransfers:c=>renderSimple(c,'transfers','Move unspent money from one allocation to another. It takes effect when approved.'),
+    spendingLimits:c=>renderSimple(c,'limits','Set limits that warn or block spending on a category, budget, department, project or account.'), committedExpenditure:renderCommitted,
+    incomeForecast:c=>renderForecast(c,'Income'), expenseForecast:c=>renderForecast(c,'Expense'), cashFlowForecast:renderCashFlow,
+    rptBudgetVsActual:renderRptVsActual, rptBudgetVariance:renderRptVariance, rptUtilization:renderRptUtilization, rptDepartment:c=>renderRptGroup(c,'Department'), rptProject:c=>renderRptGroup(c,'Project'),
+    settings:renderSettings
+  }[s];
+  setHeader(m[0], m[1], '');
+  fn(c);
 }
-function saveMailbox(email, box){
-  localStorage.setItem(MAIL_DATA_PREFIX+email, JSON.stringify(box));
-  try{ sb.from('app_state').upsert({ key: MAIL_DATA_PREFIX+email, value: box, updated_at:new Date().toISOString() }, { onConflict:'key' }); }catch(e){}
+const emptyMsg = t => `<div class="adx-empty">${t}</div>`;
+
+/* ---------- 1. Dashboard ---------- */
+function renderOverview(c){
+  const A = ADX, C = A.C, ap = approvedBudgets();
+  const total = sum(ap,b=>b.amount), spent = sum(ap,b=>spentOfBudget(b.id)), comm = sum(ap,b=>committedOfBudget(b.id)), avail = total-spent-comm;
+  const pend = state.budgets.filter(b=>b.status==='Pending Approval').length, over = ap.filter(b=>budgetStats(b).used>100);
+  const stCount = BUDGET_STATUSES.map(s=>({s, n:state.budgets.filter(b=>b.status===s).length}));
+  const colors = {Draft:'#9ca3af','Pending Approval':C.o, Approved:C.g, Rejected:C.r, Closed:C.b};
+  const catRows = state.categories.filter(k=>k.type==='Expense').map(k=>{ const bs = ap.filter(b=>b.categoryId===k.id); return {k, amt:sum(bs,b=>b.amount), sp:sum(bs,b=>spentOfBudget(b.id))}; }).filter(r=>r.amt>0);
+  setHeader('Budget Dashboard','Budget Overview', `<button class="btn primary" onclick="goTo('createBudget')">+ Create Budget</button>`);
+  c.innerHTML = `<div class="adx-wrap">
+  <div class="adx-grid adx-g4">
+    ${A.kpi({i:'wallet',l:'Approved Budget',v:fmtMoney(total),d:`<div class="adx-d fl">${ap.length} approved of ${state.budgets.length} budgets</div>`})}
+    ${A.kpi({i:'cash',c:'b',l:'Spent',v:fmtMoney(spent),d:`<div class="adx-d fl">${pct(spent,total).toFixed(0)}% of budget</div>`})}
+    ${A.kpi({i:'clock',c:'o',l:'Committed',v:fmtMoney(comm),d:`<div class="adx-d fl">Open commitments</div>`})}
+    ${A.kpi({i:'trend',c:'p',l:'Available',v:fmtMoney(avail),d:`<div class="adx-d ${avail<0?'dn':'fl'}">${pend} awaiting approval</div>`})}
+  </div>
+  <div class="adx-grid adx-g3">
+    ${A.panel('Budgets by Status', state.budgets.length ? A.donut(stCount.filter(x=>x.n).map(x=>({v:x.n,c:colors[x.s],l:x.s})), String(state.budgets.length), 'Budgets') : emptyMsg('Create a budget to see it here.'), {i:'grid'})}
+    ${A.panel('Budget vs Spent by Category', catRows.length ? catRows.slice(0,6).map(r=>A.hb(r.k.name, pct(r.sp,r.amt), fmtMoney(r.sp)+' / '+fmtMoney(r.amt), usageColor(pct(r.sp,r.amt)))).join('') : emptyMsg('Approved budgets with a category appear here.'), {i:'trend', link:['Utilization',"goTo('budgetUtilization')"]})}
+    ${A.panel('Needs Attention', (pend||over.length||state.revisions.some(r=>r.status==='Pending')||state.transfers.some(r=>r.status==='Pending')) ?
+      (pend?A.row('check',`<b>${pend}</b> budget${pend>1?'s':''} awaiting approval`,'',"goTo('budgetApprovals')"):'')+
+      over.map(b=>A.row('clock',`<b>${esc(b.name)}</b> is over budget`,Math.round(budgetStats(b).used)+'%',"goTo('budgetUtilization')")).join('')+
+      (state.revisions.some(r=>r.status==='Pending')?A.row('check','Revisions waiting for a decision','',"goTo('budgetRevisions')"):'')+
+      (state.transfers.some(r=>r.status==='Pending')?A.row('check','Transfers waiting for a decision','',"goTo('budgetTransfers')"):'') : emptyMsg('Nothing needs attention.'), {i:'clock'})}
+  </div></div>`;
 }
-async function sendMailFromApp(e){
-  e.preventDefault();
-  const u = currentUser();
-  if(!u){ mmStatus.textContent='Sign in first.'; return; }
-  const to = mmTo.value.trim().toLowerCase();
-  const subject = mmSubject.value.trim();
-  const bodyText = mmBody.value.trim();
-  if(!to||!subject||!bodyText) return;
-  mmStatus.textContent = 'Verifying recipient…';
-  const recipient = (await accountExists(to)) ? { email: to } : null;
-  if(!recipient){
-    mmStatus.textContent = '❌ No Acacia account uses that email. The message was not sent.';
-    return;
+function renderUtilization(c){
+  const A = ADX, ap = approvedBudgets(), rows = ap.map(b=>({b, st:budgetStats(b)})).sort((x,y)=>y.st.used-x.st.used);
+  const total = sum(ap,b=>b.amount), used = sum(ap,b=>spentOfBudget(b.id)+committedOfBudget(b.id)), p = pct(used,total);
+  const buckets = [['On track',rows.filter(r=>r.st.used<80).length,A.C.g],['Near limit',rows.filter(r=>r.st.used>=80&&r.st.used<=100).length,A.C.o],['Over budget',rows.filter(r=>r.st.used>100).length,A.C.r]];
+  c.innerHTML = `<div class="adx-wrap"><div class="adx-grid adx-g3">
+    ${A.panel('Overall Utilization', rows.length ? A.donut([{v:Math.min(used,total),c:A.C.g,l:'Used (spent + committed)',t:fmtMoney(used)},{v:Math.max(total-used,0),c:A.C.gl,l:'Remaining',t:fmtMoney(Math.max(total-used,0))}], p.toFixed(0)+'%','Used') : emptyMsg('No approved budgets yet.'), {i:'grid'})}
+    ${A.panel('Health', rows.length ? buckets.map(([l,n,col])=>A.row('',`<span style="color:${col}">●</span> ${l}`,String(n))).join('') : emptyMsg('No approved budgets yet.'), {i:'check'})}
+    ${A.panel('Most Used', rows.slice(0,4).map(r=>A.hb(r.b.name, Math.min(r.st.used,100), r.st.used.toFixed(0)+'%', usageColor(r.st.used))).join('') || emptyMsg('Nothing to show yet.'), {i:'trend'})}
+  </div>
+  <div class="panel"><div class="panel-head"><h3>Utilization by Budget</h3></div><div class="panel-body">${rows.length ? `<div style="overflow-x:auto"><table><thead><tr><th>Budget</th><th>Period</th><th>Budget</th><th>Spent</th><th>Committed</th><th>Available</th><th>% Used</th><th>Status</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.b.name)}</td><td>${esc(r.b.period)} ${r.b.year}</td><td>${fmtMoney(r.st.amount)}</td><td>${fmtMoney(r.st.spent)}</td><td>${fmtMoney(r.st.committed)}</td><td style="color:${r.st.available<0?'var(--danger)':'var(--success)'}">${fmtMoney(r.st.available)}</td><td>${usageBar(r.st.used)}</td><td><span class="badge status-${usageStatus(r.st.used).replace(/ /g,'.')}">${usageStatus(r.st.used)}</span></td></tr>`).join('')}</tbody></table></div>` : emptyMsg('Approve a budget to track its utilization.')}</div></div></div>`;
+}
+function renderSpending(c){
+  const A = ADX, ex = state.expenses, now = new Date(), ym = now.toISOString().slice(0,7), yr = String(now.getFullYear());
+  const mSpent = sum(ex.filter(e=>(e.date||'').slice(0,7)===ym),e=>e.amount), ySpent = sum(ex.filter(e=>(e.date||'').slice(0,4)===yr),e=>e.amount);
+  const series = A.months(12).map(m=>({l:m.l, v:sum(ex.filter(e=>(e.date||'').slice(0,7)===m.k),e=>e.amount)}));
+  const byCat = {}; ex.forEach(e=>{ const k = e.categoryId ? catName(e.categoryId) : 'Uncategorised'; byCat[k] = (byCat[k]||0)+(Number(e.amount)||0); });
+  const cats = Object.entries(byCat).sort((a,b)=>b[1]-a[1]).slice(0,6), maxC = cats.length ? cats[0][1] : 1;
+  setHeader('Budget Dashboard','Spending Summary', newBtn('expenses','Record Expense'));
+  c.innerHTML = `<div class="adx-wrap"><div class="adx-grid adx-g4">
+    ${A.kpi({i:'cash',l:'Spent This Month',v:fmtMoney(mSpent)})}
+    ${A.kpi({i:'wallet',c:'b',l:'Spent This Year',v:fmtMoney(ySpent)})}
+    ${A.kpi({i:'clock',c:'o',l:'Committed (open)',v:fmtMoney(sum(state.commitments.filter(x=>x.status==='Open'),x=>x.amount))})}
+    ${A.kpi({i:'trend',c:'p',l:'Expenses Recorded',v:ex.length})}
+  </div>
+  <div class="adx-grid adx-g2">
+    ${A.panel('Spending, Last 12 Months', ex.length ? A.line(series) : emptyMsg('Record an expense to see the trend.'), {i:'trend'})}
+    ${A.panel('Spending by Category', cats.length ? cats.map(([k,v])=>A.hb(k, v/maxC*100, fmtMoney(v))).join('') : emptyMsg('No spending yet.'), {i:'grid'})}
+  </div>
+  <div class="panel"><div class="panel-head"><h3>Recent Expenses</h3></div><div class="panel-body">${renderEntityTable('expenses', [...ex].sort((a,b)=>String(b.date).localeCompare(String(a.date))).slice(0,25), {emptyHint:'Spending is recorded against an approved budget.'})}</div></div></div>`;
+}
+
+/* ---------- 2. Budget management ---------- */
+function renderCreateBudget(c){
+  const sch = ENTITIES.budgets, rec = sch.defaults();
+  c.innerHTML = `<div class="panel"><div class="panel-head"><h3>New Budget</h3></div><div class="panel-body" id="cbForm">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:4px 18px">${sch.fields.filter(f=>f.key!=='status').map(f=>renderField(f,rec)).join('')}</div>
+    <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" onclick="createBudgetSubmit('Draft')">Save as Draft</button><button class="btn primary" onclick="createBudgetSubmit('Pending Approval')">Submit for Approval</button></div>
+    <div style="font-size:12px;opacity:.7;margin-top:10px">Only approved budgets can be spent against. Annual budgets cover the full year; for Monthly or Quarterly budgets pick the month or quarter.</div></div></div>`;
+}
+function createBudgetSubmit(status){
+  const draft = ENTITIES.budgets.defaults(); draft.status = status;
+  document.querySelectorAll('#cbForm [data-key]').forEach(i=>{ draft[i.dataset.key] = i.value; });
+  if(!commitRecord('budgets', draft, null)) return;
+  logApproval('Budget', draft.code+' '+draft.name, status==='Draft' ? 'Created as draft' : 'Submitted');
+  saveState(); toast('Budget '+draft.code+' saved.');
+  goTo({Annual:'annualBudgets',Monthly:'monthlyBudgets',Quarterly:'quarterlyBudgets'}[draft.type]);
+}
+function renderBudgetList(c, type){
+  const st = route.params.status, yr = route.params.year;
+  let recs = state.budgets.filter(b=>b.type===type);
+  const years = [...new Set(recs.map(b=>b.year))].sort();
+  const key = {Annual:'annualBudgets',Monthly:'monthlyBudgets',Quarterly:'quarterlyBudgets'}[type];
+  if(st) recs = recs.filter(b=>b.status===st); if(yr) recs = recs.filter(b=>String(b.year)===String(yr));
+  setHeader('Budget Management', type+' Budgets', newBtn('budgets', 'New '+type+' Budget', {type, year:curYear(), status:'Draft'}));
+  c.innerHTML = tabsHtml(BUDGET_STATUSES, st, v=>`goTo('${key}',{status:'${v}',year:'${yr||''}'})`) + (years.length>1 ? `<div style="margin:0 0 10px;font-size:13px">Year: ${['',...years].map(y=>`<a style="cursor:pointer;margin-right:10px;${String(yr||'')===String(y)?'font-weight:700;text-decoration:underline':''}" onclick="goTo('${key}',{status:'${st||''}',year:'${y}'})">${y||'All'}</a>`).join('')}</div>` : '') +
+    `<div class="panel"><div class="panel-body">${renderEntityTable('budgets', recs, {preset:{type,year:curYear(),status:'Draft'}})}</div></div>`;
+}
+function renderCategories(c){
+  const t = route.params.type; setHeader('Budget Management','Budget Categories', newBtn('categories'));
+  c.innerHTML = tabsHtml(['Expense','Income'], t, v=>`goTo('budgetCategories',{type:'${v}'})`) + `<div class="panel"><div class="panel-body">${renderEntityTable('categories', state.categories.filter(k=>!t||k.type===t))}</div></div>`;
+}
+function renderSimple(c, ek, intro){
+  const recs = [...state[ek]].sort((a,b)=>String(b.date||b.createdAt||'').localeCompare(String(a.date||a.createdAt||'')));
+  setHeader(SECTION_META[route.section][0], SECTION_META[route.section][1], newBtn(ek));
+  c.innerHTML = `<div style="font-size:13px;opacity:.75;margin-bottom:10px">${esc(intro)}</div>` + (ek==='limits'?'':tabsHtml(['Pending','Approved','Rejected'], route.params.status, v=>`goTo('${route.section}',{status:'${v}'})`)).replace(/^$/,'') +
+    `<div class="panel"><div class="panel-body">${renderEntityTable(ek, route.params.status ? recs.filter(r=>r.status===route.params.status) : recs)}</div></div>`;
+}
+
+/* ---------- 3. Allocations ---------- */
+function renderAllocations(c, kind){
+  const recs = state.allocations.filter(a=>a.kind===kind), key = {Account:'accountAllocations',Department:'departmentAllocations',Project:'projectAllocations'}[kind];
+  const tot = sum(recs,a=>a.amount), sp = sum(recs,a=>spentOfAlloc(a.id)), cm = sum(recs,a=>committedOfAlloc(a.id));
+  setHeader('Budget Allocations', kind+' Allocations', newBtn('allocations','New '+kind+' Allocation',{kind}));
+  c.innerHTML = `<div class="stat-grid"><div class="stat-card"><div class="num">${fmtMoney(tot)}</div><div class="lbl">Allocated</div></div><div class="stat-card"><div class="num">${fmtMoney(sp)}</div><div class="lbl">Spent</div></div><div class="stat-card"><div class="num">${fmtMoney(cm)}</div><div class="lbl">Committed</div></div><div class="stat-card gold"><div class="num">${fmtMoney(tot-sp-cm)}</div><div class="lbl">Remaining</div></div></div>
+    <div class="panel"><div class="panel-body">${renderEntityTable('allocations', recs, {preset:{kind}, emptyHint: state.budgets.length ? 'Split a budget across '+kind.toLowerCase()+'s.' : 'Create a budget first, then split it across '+kind.toLowerCase()+'s.'})}</div></div>`;
+}
+
+/* ---------- 4. Control ---------- */
+function renderApprovals(c){
+  const pend = state.budgets.filter(b=>b.status==='Pending Approval'), log = [...state.approvalLog].reverse().slice(0,50);
+  const pr = state.revisions.filter(r=>r.status==='Pending').length, pt = state.transfers.filter(r=>r.status==='Pending').length;
+  c.innerHTML = `<div class="stat-grid"><div class="stat-card gold"><div class="num">${pend.length}</div><div class="lbl">Budgets awaiting approval</div></div><div class="stat-card"><div class="num">${pr}</div><div class="lbl"><a style="cursor:pointer" onclick="goTo('budgetRevisions',{status:'Pending'})">Pending revisions</a></div></div><div class="stat-card"><div class="num">${pt}</div><div class="lbl"><a style="cursor:pointer" onclick="goTo('budgetTransfers',{status:'Pending'})">Pending transfers</a></div></div></div>
+    <div class="panel"><div class="panel-head"><h3>Waiting for Approval</h3></div><div class="panel-body">${pend.length ? `<div style="overflow-x:auto"><table><thead><tr><th>Code</th><th>Budget</th><th>Type</th><th>Period</th><th>Amount</th><th>Owner</th><th></th></tr></thead><tbody>${pend.map(b=>`<tr><td>${esc(b.code)}</td><td>${esc(b.name)}</td><td>${esc(b.type)}</td><td>${esc(b.period)} ${b.year}</td><td>${fmtMoney(b.amount)}</td><td>${esc(b.owner||'—')}</td><td>${flowBtn('budgets',b.id,'Approved','Approve','primary')} ${flowBtn('budgets',b.id,'Rejected','Reject')}</td></tr>`).join('')}</tbody></table></div>` : emptyMsg('No budgets are waiting for approval. Submit a draft from Annual, Monthly or Quarterly Budgets.')}</div></div>
+    <div class="panel"><div class="panel-head"><h3>Approval History</h3></div><div class="panel-body">${log.length ? `<div style="overflow-x:auto"><table><thead><tr><th>Date</th><th>Type</th><th>Item</th><th>Decision</th><th>By</th></tr></thead><tbody>${log.map(l=>`<tr><td>${fmtDate(l.date)}</td><td>${esc(l.kind)}</td><td>${esc(l.ref)}</td><td>${esc(l.decision)}</td><td>${esc(l.by||'—')}</td></tr>`).join('')}</tbody></table></div>` : emptyMsg('No decisions recorded yet.')}</div></div>`;
+}
+function renderCommitted(c){
+  const open = state.commitments.filter(x=>x.status==='Open'), t = route.params.status;
+  setHeader('Budget Control','Committed Expenditure', newBtn('commitments'));
+  c.innerHTML = `<div class="stat-grid"><div class="stat-card gold"><div class="num">${fmtMoney(sum(open,x=>x.amount))}</div><div class="lbl">Open commitments</div></div><div class="stat-card"><div class="num">${open.length}</div><div class="lbl">Open items</div></div></div>
+    <div style="font-size:13px;opacity:.75;margin-bottom:10px">Money promised through purchase orders or contracts but not yet spent. Open commitments reduce what is available in a budget.</div>` +
+    tabsHtml(['Open','Invoiced','Released'], t, v=>`goTo('committedExpenditure',{status:'${v}'})`) + `<div class="panel"><div class="panel-body">${renderEntityTable('commitments', state.commitments.filter(x=>!t||x.status===t))}</div></div>`;
+}
+
+/* ---------- 5. Forecasting ---------- */
+function forecastMonth(type, year, mi){ return sum(state.forecasts.filter(f=>f.type===type && Number(f.year)===year && f.month===MONTHS[mi]), f=>f.amount); }
+function renderForecast(c, type){
+  const key = type==='Income' ? 'incomeForecast' : 'expenseForecast', yr = Number(route.params.year)||curYear();
+  const recs = state.forecasts.filter(f=>f.type===type && Number(f.year)===yr).sort((a,b)=>MONTHS.indexOf(a.month)-MONTHS.indexOf(b.month));
+  const vals = MONTHS.map((m,i)=>forecastMonth(type,yr,i)), total = sum(vals,v=>v);
+  const actual = type==='Expense' ? MONTHS.map((m,i)=>sum(state.expenses.filter(e=>(e.date||'').slice(0,7)===yr+'-'+String(i+1).padStart(2,'0')),e=>e.amount)) : null;
+  setHeader('Forecasting', type+' Forecast', newBtn('forecasts','New '+type+' Forecast',{type, year:yr}));
+  c.innerHTML = tabsHtml([yr-1,yr,yr+1].map(String), String(yr), v=>`goTo('${key}',{year:'${v||curYear()}'})`) + `<div class="adx-wrap"><div class="adx-grid adx-g3">
+    ${ADX.kpi({i:'trend',l:'Forecast '+yr,v:fmtMoney(total)})}${ADX.kpi({i:'cash',c:'b',l:'Monthly Average',v:fmtMoney(total/12)})}
+    ${actual ? ADX.kpi({i:'wallet',c:'o',l:'Actual Spent '+yr,v:fmtMoney(sum(actual,x=>x)),d:`<div class="adx-d fl">${pct(sum(actual,x=>x),total).toFixed(0)}% of forecast</div>`}) : ADX.kpi({i:'wallet',c:'o',l:'Entries',v:recs.length})}
+  </div>${ADX.panel('By Month', total||(actual&&sum(actual,x=>x)) ? ADX.bars(MONTHS.map((m,i)=>({l:m.slice(0,3), v:[vals[i]]})), [ADX.C.g]) : emptyMsg('Add a forecast to see the monthly chart.'), {i:'grid'})}</div>
+    <div class="panel"><div class="panel-body">${renderEntityTable('forecasts', recs, {preset:{type,year:yr}})}</div></div>`;
+}
+function renderCashFlow(c){
+  const start = new Date(), rows = []; let bal = Number(state.settings.openingCash)||0;
+  for(let i=0;i<12;i++){
+    const d = new Date(start.getFullYear(), start.getMonth()+i, 1), y = d.getFullYear(), m = d.getMonth();
+    const inflow = forecastMonth('Income',y,m), out = forecastMonth('Expense',y,m), open = bal; bal = open+inflow-out;
+    rows.push({label:MONTHS[m].slice(0,3)+' '+y, open, inflow, out, net:inflow-out, close:bal});
   }
-  const bodyHtml = escapeHtml(bodyText).replace(/\n/g,'<br>');
-  const now = Date.now();
-  const mailId = 'm'+now;
-
-  const inbox = loadMailbox(recipient.email);
-  inbox.mails = inbox.mails || [];
-  inbox.mails.unshift({
-    id: mailId,
-    from: u.name || u.email,
-    email: u.email,
-    to: recipient.email,
-    subject, preview: bodyText.slice(0,90), body: bodyHtml,
-    time: now, read: false, starred: false, folder: 'inbox'
-  });
-  saveMailbox(recipient.email, inbox);
-
-  const sent = loadMailbox(u.email);
-  sent.mails = sent.mails || [];
-  sent.mails.unshift({
-    id: mailId+'_s',
-    from: u.name || u.email,
-    email: recipient.email,
-    to: recipient.email,
-    subject, preview: bodyText.slice(0,90), body: bodyHtml,
-    time: now, read: true, starred: false, folder: 'sent'
-  });
-  saveMailbox(u.email, sent);
-
-  mmStatus.textContent = '✅ Sent to '+recipient.email+' — will appear in their Acacia Mail inbox.';
-  setTimeout(closeMail, 1200);
+  const low = rows.reduce((a,r)=>r.close<a.close?r:a, rows[0]);
+  setHeader('Forecasting','Cash Flow Forecast','');
+  c.innerHTML = `<div class="panel"><div class="panel-body" style="display:flex;gap:10px;align-items:end;flex-wrap:wrap"><div class="field" style="margin:0"><label>Opening cash balance</label><input id="openCash" type="number" value="${Number(state.settings.openingCash)||0}"></div><button class="btn primary" onclick="state.settings.openingCash=Number(document.getElementById('openCash').value)||0;saveState();render()">Update</button><span style="font-size:12px;opacity:.7">Built from your Income and Expense forecasts for the next 12 months.</span></div></div>
+  <div class="adx-wrap"><div class="adx-grid adx-g3">${ADX.kpi({i:'cash',l:'Closing Cash (12 months)',v:fmtMoney(rows[11].close)})}${ADX.kpi({i:'trend',c:'b',l:'Net Cash Flow',v:fmtMoney(sum(rows,r=>r.net))})}${ADX.kpi({i:'clock',c:'o',l:'Lowest Balance',v:fmtMoney(low.close),d:`<div class="adx-d ${low.close<0?'dn':'fl'}">${low.label}</div>`})}</div>
+  ${ADX.panel('Projected Closing Balance', state.forecasts.length ? ADX.line(rows.map(r=>({l:r.label.slice(0,3), v:Math.max(r.close,0)}))) : emptyMsg('Add income and expense forecasts to project your cash.'), {i:'trend'})}</div>
+  <div class="panel"><div class="panel-body"><div style="overflow-x:auto"><table><thead><tr><th>Month</th><th>Opening</th><th>Inflows</th><th>Outflows</th><th>Net</th><th>Closing</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${r.label}</td><td>${fmtMoney(r.open)}</td><td>${fmtMoney(r.inflow)}</td><td>${fmtMoney(r.out)}</td><td style="color:${r.net<0?'var(--danger)':'var(--success)'}">${fmtMoney(r.net)}</td><td style="font-weight:700;color:${r.close<0?'var(--danger)':'inherit'}">${fmtMoney(r.close)}</td></tr>`).join('')}</tbody></table></div></div></div>`;
 }
 
-function boot(){
-  let u=currentUser();
-  if(u && !AcaciaCloud.isCloudId(u.companyId)){ localStorage.removeItem(SESSION_KEY); u=null; }
-  if(u){ AcaciaCloud.start({companyId:u.companyId, email:u.email, role:'admin'}).then(function(r){ if(String(r).indexOf('blocked:')===0){ alert(String(r).slice(8)); signOut(); } }).catch(function(){}); }
-  if(!u){hpShowHome();app.classList.add('hidden');app.classList.remove('flex');return}
-  hpHideHome();authScreen.classList.add('hidden');app.classList.remove('hidden');app.classList.add('flex');
-  userAvatar.textContent=initials(u.companyName||u.name||u.email);userAvatar.title=(u.companyName||'')+' · '+(u.email||'');
-  
-  // Display right sidebar once logged in
-  document.getElementById('rightSidebar')?.classList.remove('hidden');
-  
-  renderNav(); renderView(); pullAll();
+/* ---------- 6. Reports ---------- */
+let reportData = {};
+function reportPage(c, key, intro, tables){
+  reportData[key] = tables;
+  const cell = (v,f) => f==='money' ? fmtMoney(v) : f==='pct' ? Number(v).toFixed(1)+'%' : esc(v);
+  c.innerHTML = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap"><span style="font-size:13px;opacity:.75;flex:1">${esc(intro)}</span><button class="btn small" onclick="exportReport('${key}')">Export CSV</button><button class="btn small" onclick="window.print()">Print</button></div>` +
+    tables.map(t=>`<div class="panel"><div class="panel-head"><h3>${esc(t.title)}</h3></div><div class="panel-body">${t.rows.length ? `<div style="overflow-x:auto"><table><thead><tr>${t.head.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${t.rows.map(r=>`<tr>${r.map((v,i)=>`<td>${cell(v,t.fmts[i])}</td>`).join('')}</tr>`).join('')}${t.foot?`<tr style="font-weight:700">${t.foot.map((v,i)=>`<td>${cell(v,t.fmts[i])}</td>`).join('')}</tr>`:''}</tbody></table></div>` : emptyMsg('No data for this report yet.')}</div></div>`).join('');
 }
-boot();
+function exportReport(key){
+  const q = v => '"'+String(v==null?'':v).replace(/"/g,'""')+'"', out = [];
+  (reportData[key]||[]).forEach(t=>{ out.push(q(t.title)); out.push(t.head.map(q).join(',')); t.rows.forEach(r=>out.push(r.map(q).join(','))); if(t.foot) out.push(t.foot.map(q).join(',')); out.push(''); });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([out.join('\n')],{type:'text/csv'})); a.download = key+'-'+todayISO()+'.csv'; a.click();
+}
+function renderRptVsActual(c){
+  const rows = approvedBudgets().map(b=>{ const s = budgetStats(b); return [b.code,b.name,b.period+' '+b.year,s.amount,s.spent,s.committed,s.variance,s.usedActual]; });
+  const f = i => sum(rows,r=>r[i]);
+  reportPage(c,'budget-vs-actual','Approved budgets compared with what has actually been spent. Variance = budget − actual.',[{title:'Budget vs Actual', head:['Code','Budget','Period','Budget','Actual','Committed','Variance','% Spent'], fmts:['t','t','t','money','money','money','money','pct'], rows, foot: rows.length?['Total','','',f(3),f(4),f(5),f(6),pct(f(4),f(3))]:null}]);
+}
+function renderRptVariance(c){
+  const rows = approvedBudgets().map(b=>{ const s = budgetStats(b); const v = s.variance; return [b.name,b.period+' '+b.year,s.amount,s.spent,v,s.amount?v/s.amount*100:0,v<0?'Unfavourable':'Favourable']; }).sort((a,b)=>a[4]-b[4]);
+  const cat = state.categories.filter(k=>k.type==='Expense').map(k=>{ const bs = approvedBudgets().filter(b=>b.categoryId===k.id), bud = sum(bs,b=>b.amount), act = sum(bs,b=>spentOfBudget(b.id)); return [k.name,bud,act,bud-act,bud?(bud-act)/bud*100:0]; }).filter(r=>r[1]||r[2]);
+  reportPage(c,'budget-variance','Where spending is above (unfavourable) or below (favourable) budget, largest overspends first.',[
+    {title:'Variance by Budget', head:['Budget','Period','Budget','Actual','Variance','Variance %','Result'], fmts:['t','t','money','money','money','pct','t'], rows},
+    {title:'Variance by Category', head:['Category','Budget','Actual','Variance','Variance %'], fmts:['t','money','money','money','pct'], rows:cat}]);
+}
+function renderRptUtilization(c){
+  const rows = approvedBudgets().map(b=>{ const s = budgetStats(b); return [b.name,b.period+' '+b.year,s.amount,s.spent,s.committed,s.available,s.used,usageStatus(s.used)]; }).sort((a,b)=>b[6]-a[6]);
+  reportPage(c,'budget-utilization','How much of each approved budget is used, counting both spending and open commitments.',[{title:'Budget Utilization', head:['Budget','Period','Budget','Spent','Committed','Available','% Used','Status'], fmts:['t','t','money','money','money','money','pct','t'], rows}]);
+}
+function renderRptGroup(c, kind){
+  const groups = {}; state.allocations.filter(a=>a.kind===kind).forEach(a=>{ const g = groups[a.target] = groups[a.target]||{amt:0,sp:0,cm:0,n:0}; const s = allocStats(a); g.amt+=s.amount; g.sp+=s.spent; g.cm+=s.committed; g.n++; });
+  const rows = Object.entries(groups).map(([k,g])=>[k,g.n,g.amt,g.sp,g.cm,g.amt-g.sp-g.cm,pct(g.sp+g.cm,g.amt)]).sort((a,b)=>b[2]-a[2]);
+  const f = i => sum(rows,r=>r[i]);
+  reportPage(c,kind.toLowerCase()+'-budget-report','Allocated, spent and remaining budget for each '+kind.toLowerCase()+'. Based on '+kind+' Allocations.',[{title:kind+' Budget Report', head:[kind,'Allocations','Allocated','Spent','Committed','Remaining','% Used'], fmts:['t','t','money','money','money','money','pct'], rows, foot: rows.length?['Total',f(1),f(2),f(3),f(4),f(5),pct(f(3)+f(4),f(2))]:null}]);
+}
+
+/* ---------- Settings ---------- */
+function renderSettings(c){
+  const s = state.settings;
+  const list = (title,key) => `<div class="settings-block"><h4>${title}</h4><div class="pill-list">${s[key].map((it,i)=>`<span class="pill">${esc(it)}<button onclick="removeSettingItem('${key}',${i})">✕</button></span>`).join('')||'<span style="opacity:.6;font-size:13px">None yet</span>'}</div><div style="margin-top:10px;display:flex;gap:8px"><input id="input_${key}" placeholder="Add new..." style="padding:7px 10px;border:1px solid var(--line);border-radius:3px"><button class="btn small" onclick="addSettingItem('${key}')">+ Add</button></div></div>`;
+  c.innerHTML = `<div class="panel"><div class="panel-head"><h3>Company Information</h3></div><div class="panel-body">
+    <div class="field-row"><div class="field"><label>Company Name</label><input id="c_name" value="${esc(s.company.name)}"></div><div class="field"><label>Currency</label><input id="c_currency" value="${esc(s.company.currency)}"></div></div>
+    <div class="field-row"><div class="field"><label>Phone</label><input id="c_phone" value="${esc(s.company.phone)}"></div><div class="field"><label>Email</label><input id="c_email" value="${esc(s.company.email)}"></div></div>
+    <div class="field-row"><div class="field"><label>Budget number prefix</label><input id="c_prefix" value="${esc(s.budgetNumberingPrefix)}"></div><div class="field"><label>Next budget number</label><input id="c_next" type="number" value="${s.nextBudgetNumber}"></div></div>
+    <button class="btn primary" onclick="saveCompanyInfo()">Save</button></div></div>
+  <div class="panel"><div class="panel-head"><h3>Lists</h3></div><div class="panel-body">${list('Departments','departments')}${list('Projects','projectNames')}${list('Accounts','accounts')}</div></div>
+  <div class="panel"><div class="panel-head"><h3>Data</h3></div><div class="panel-body" style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" onclick="exportData()">Export backup</button><label class="btn" style="cursor:pointer">Import backup<input type="file" accept=".json" style="display:none" onchange="importData(event)"></label><button class="btn" style="color:var(--danger)" onclick="resetAllData()">Erase all data</button></div></div>`;
+}
+function saveCompanyInfo(){
+  const g = id => document.getElementById(id).value, s = state.settings;
+  s.company.name = g('c_name').trim(); s.company.currency = g('c_currency').trim()||'KES'; s.company.phone = g('c_phone').trim(); s.company.email = g('c_email').trim();
+  s.budgetNumberingPrefix = g('c_prefix'); s.nextBudgetNumber = Math.max(1, parseInt(g('c_next'))||1);
+  saveState(); toast('Settings saved.');
+}
+function addSettingItem(key){ const i = document.getElementById('input_'+key), v = i.value.trim(); if(!v) return; if(state.settings[key].some(x=>low(x)===low(v))) return toast('Already in the list.'); state.settings[key].push(v); saveState(); render(); }
+function removeSettingItem(key, idx){ state.settings[key].splice(idx,1); saveState(); render(); }
+function exportData(){ const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(state,null,2)],{type:'application/json'})); a.download = 'acacia-budget-backup-'+todayISO()+'.json'; a.click(); toast('Data exported.'); }
+function importData(e){
+  const file = e.target.files[0]; if(!file) return; const r = new FileReader();
+  r.onload = evt => { try{ const p = JSON.parse(evt.target.result), b = freshState(); state = Object.assign(b, p, {settings:Object.assign(b.settings, p.settings||{})}); saveState(); toast('Data imported.'); render(); }catch(err){ toast('Could not read that file.'); } };
+  r.readAsText(file); e.target.value = '';
+}
+function resetAllData(){ if(!confirm('This will permanently erase all Acacia Budget data on this device. Continue?')) return; state = freshState(); saveState(); toast('All data cleared.'); goTo('budgetOverview'); }
+
+/* ---------- init ---------- */
+document.getElementById('modalOverlay').addEventListener('click', e=>{ if(e.target.id==='modalOverlay') closeModal(); });
+updateThemeToggleIcon();
+checkSessionOnLoad();
