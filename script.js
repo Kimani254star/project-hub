@@ -762,9 +762,10 @@ const ENTITIES = {
       {key:'type', label:'Budget Type', type:'select', options:BUDGET_TYPES, required:true},
       {key:'year', label:'Fiscal Year', type:'number', required:true},
       {key:'period', label:'Period (Q1–Q4 or month; Annual = Full year)', type:'select', options:PERIODS},
+      {key:'department', label:'Department', type:'select', options:()=>state.settings.departments.map(x=>({value:x,label:x})), required:true},
       {key:'amount', label:'Budget Amount', type:'number', required:true, min:0},
-      {key:'owner', label:'Department', type:'text', required:true},
-      {key:'status', label:'Status', type:'select', options:['Pending Approval','Draft','Approved','Rejected','Closed']},
+      {key:'owner', label:'Budget Owner', type:'text'},
+      {key:'status', label:'Status', type:'select', options:BUDGET_STATUSES},
       {key:'notes', label:'Notes', type:'textarea'}
     ],
     columns: ['code','name','type','period','year','categoryId','amount','used','status','flow'],
@@ -775,7 +776,8 @@ const ENTITIES = {
       else if(d.type==='Quarterly' && !/^Q[1-4]$/.test(d.period)) d.period = 'Q1';
       else if(d.type==='Monthly' && MONTHS.indexOf(d.period)<0) d.period = MONTHS[new Date().getMonth()];
       d.amount = Number(d.amount)||0; d.year = Number(d.year)||curYear();
-      if(!d.status) d.status = 'Draft';
+      if(!d.status) d.status = 'Pending Approval';
+      if(d.initialAmount===undefined) d.initialAmount = Number(d.amount)||0;
     },
     validate(d){ if((Number(d.amount)||0)<0) return 'Budget amount cannot be negative.'; }
   },
@@ -793,15 +795,16 @@ const ENTITIES = {
   allocations: {
     label:'Allocation', labelPlural:'Allocations',
     fields: [
-      {key:'budgetId', label:'Budget', type:'select', options:budgetOpts(false), required:true},
+      {key:'budgetId', label:'Budget', type:'select', options:budgetOpts(true), required:true},
       {key:'target', label:'Allocated To', type:'combo', options:targetOpts, required:true, placeholder:'Pick or type a name'},
-      {key:'categoryId', label:'Category', type:'select', options:catOpts('Expense')},
+      {key:'categoryId', label:'Category', type:'select', options:()=>[]},
       {key:'amount', label:'Allocated Amount', type:'number', required:true, min:0},
       {key:'notes', label:'Notes', type:'textarea'}
     ],
     columns: ['target','budgetId','categoryId','amount','spent','committed','remaining','used'],
     validate(d, id){
       const b = byId('budgets', d.budgetId); if(!b) return 'Choose a budget.';
+      if(b.status!=='Approved') return 'This budget must be approved before allocations can be made.';
       const others = sum(state.allocations.filter(a=>a.id!==id && a.budgetId===d.budgetId && a.kind===d.kind), a=>a.amount);
       if(others + (Number(d.amount)||0) > (Number(b.amount)||0)) return d.kind+' allocations would exceed the budget total of '+fmtMoney(b.amount)+' (already allocated: '+fmtMoney(others)+').';
     }
@@ -857,7 +860,7 @@ const ENTITIES = {
       {key:'vendor', label:'Vendor / Supplier', type:'text'},
       {key:'budgetId', label:'Budget', type:'select', options:budgetOpts(true), required:true},
       {key:'allocationId', label:'Allocation (optional)', type:'select', options:allocOpts},
-      {key:'categoryId', label:'Category', type:'select', options:catOpts('Expense')},
+      {key:'categoryId', label:'Category', type:'select', options:()=>[]},
       {key:'amount', label:'Committed Amount', type:'number', required:true, min:0},
       {key:'status', label:'Status', type:'select', options:['Open','Invoiced','Released']},
       {key:'notes', label:'Notes', type:'textarea'}
@@ -874,7 +877,7 @@ const ENTITIES = {
       {key:'vendor', label:'Vendor / Payee', type:'text'},
       {key:'budgetId', label:'Budget', type:'select', options:budgetOpts(true), required:true},
       {key:'allocationId', label:'Allocation (optional)', type:'select', options:allocOpts},
-      {key:'categoryId', label:'Category', type:'select', options:catOpts('Expense')},
+      {key:'categoryId', label:'Category', type:'select', options:()=>[]},
       {key:'amount', label:'Amount Spent', type:'number', required:true, min:0}
     ],
     columns: ['date','description','vendor','budgetId','allocationId','categoryId','amount'],
@@ -1162,28 +1165,15 @@ function renderSpending(c){
 
 /* ---------- 2. Budget management ---------- */
 function renderCreateBudget(c){
-  c.innerHTML = `<div class="panel"><div class="panel-head"><h3>1. Plan Budget Allocation</h3><span class="badge">Planned</span></div><div class="panel-body" id="cbForm">
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px 18px">
-      <div><label class="field-label">Account / Budget Line</label><input class="cb-field" data-key="name" placeholder="Executive Salaries, Cloud Hosting, Logistics" required></div>
-      <div><label class="field-label">Department</label><input class="cb-field" data-key="owner" list="cbDepartments" placeholder="Select or enter department" required><datalist id="cbDepartments">${(state.settings.departments||[]).map(x=>`<option value="${esc(typeof x==='string'?x:x.name||x.label||'')}">`).join('')}</datalist></div>
-      <div><label class="field-label">Period Cycle</label><select class="cb-field" id="cbCycle" data-key="type"><option value="Annual">Annual</option><option value="Monthly">Monthly</option><option value="Quarterly">Quarterly</option></select></div>
-      <div><label class="field-label">Timeframe</label><select class="cb-field" id="cbPeriod" data-key="period"><option value="Full year">Full year</option>${MONTHS.map(m=>`<option value="${m}">${m}</option>`).join('')}<option value="Q1">Q1</option><option value="Q2">Q2</option><option value="Q3">Q3</option><option value="Q4">Q4</option></select></div>
-      <div><label class="field-label">Fiscal Year</label><input class="cb-field" type="number" min="2000" max="2100" data-key="year" value="${curYear()}"></div>
-      <div style="grid-column:1/-1"><label class="field-label">Target Allocation (${esc(state.settings.currency||'KES')})</label><input class="cb-field" type="number" min="0" step="0.01" data-key="amount" placeholder="0.00" required></div>
-      <div style="grid-column:1/-1"><label class="field-label">Notes / Staged period values (optional)</label><textarea class="cb-field" data-key="notes" rows="2" placeholder="Optional notes or monthly / quarterly breakdown"></textarea></div>
-    </div>
-    <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" onclick="createBudgetSubmit('Draft')">Save as Draft</button><button class="btn primary" onclick="createBudgetSubmit('Pending Approval')">Submit for Approval</button></div>
-    <div style="font-size:12px;opacity:.7;margin-top:10px">This form follows the original Acacia Books budget allocation format. Annual budgets cover the full year; Monthly or Quarterly budgets use the selected timeframe.</div></div></div>`;
-  const cyc=document.getElementById('cbCycle'), per=document.getElementById('cbPeriod');
-  if(cyc&&per) cyc.addEventListener('change',()=>{ const t=cyc.value; per.value=t==='Annual'?'Full year':t==='Monthly'?MONTHS[new Date().getMonth()]:'Q1'; });
+  const sch = ENTITIES.budgets, rec = sch.defaults();
+  c.innerHTML = `<div class="panel"><div class="panel-head"><h3>New Budget</h3></div><div class="panel-body" id="cbForm">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:4px 18px">${sch.fields.filter(f=>f.key!=='status').map(f=>renderField(f,rec)).join('')}</div>
+    <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" onclick="createBudgetSubmit('Pending Approval')">Submit for Approval</button></div>
+    <div style="font-size:12px;opacity:.7;margin-top:10px">Only approved budgets can be spent against. Annual budgets cover the full year; for Monthly or Quarterly budgets pick the month or quarter.</div></div></div>`;
 }
 function createBudgetSubmit(status){
-  const draft = ENTITIES.budgets.defaults(); draft.status = status==='Draft'?'Draft':'Pending Approval';
+  const draft = ENTITIES.budgets.defaults(); draft.status = 'Pending Approval';
   document.querySelectorAll('#cbForm [data-key]').forEach(i=>{ draft[i.dataset.key] = i.value; });
-  draft.type = document.getElementById('cbCycle')?.value || draft.type;
-  draft.period = document.getElementById('cbPeriod')?.value || draft.period;
-  draft.year = Number(draft.year)||curYear(); draft.amount=Number(draft.amount)||0;
-  if(!draft.name || !draft.amount || !draft.owner){ toast('Enter the budget line, department and allocation amount.'); return; }
   if(!commitRecord('budgets', draft, null)) return;
   logApproval('Budget', draft.code+' '+draft.name, status==='Draft' ? 'Created as draft' : 'Submitted');
   saveState(); toast('Budget '+draft.code+' saved.');
@@ -1203,7 +1193,13 @@ function renderCategories(c){
   const t = route.params.type; setHeader('Budget Management','Budget Categories', newBtn('categories'));
   c.innerHTML = tabsHtml(['Expense','Income'], t, v=>`goTo('budgetCategories',{type:'${v}'})`) + `<div class="panel"><div class="panel-body">${renderEntityTable('categories', state.categories.filter(k=>!t||k.type===t))}</div></div>`;
 }
+function renderBudgetRevisions(c){
+  const rows=state.budgets.slice().sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+  setHeader('Budget Control','Budget Revisions','');
+  c.innerHTML=`<div class="panel"><div class="panel-head"><h3>Budget Revision Register</h3><p>Initial amount, latest revised amount and difference for every budget</p></div><div class="panel-body" style="overflow-x:auto"><table><thead><tr><th>Budget</th><th>Department</th><th>Initial Amount</th><th>Revised Amount</th><th>Difference</th><th>Status</th><th>Action</th></tr></thead><tbody>${rows.map(b=>{const revs=state.revisions.filter(r=>r.budgetId===b.id&&r.status==='Approved').sort((a,z)=>String(z.date).localeCompare(String(a.date)));const latest=revs[0], initial=Number(b.initialAmount??b.amount)||0, revised=latest?Number(latest.newAmount)||0:Number(b.amount)||0, diff=revised-initial;return `<tr><td>${esc(b.code)} · ${esc(b.name)}</td><td>${esc(b.department||'—')}</td><td>${fmtMoney(initial)}</td><td>${fmtMoney(revised)}</td><td style="color:${diff<0?'#b91c1c':'#047857'}">${diff>0?'+':''}${fmtMoney(diff)}</td><td>${esc(latest?'Revised':b.status)}</td><td><button class="btn primary" onclick="openEntityModal('revisions',null,{budgetId:'${b.id}',newAmount:${Number(b.amount)||0}})">Revise</button></td></tr>`}).join('')||`<tr><td colspan="7">No budgets created yet.</td></tr>`}</tbody></table></div></div>`;
+}
 function renderSimple(c, ek, intro){
+  if(ek==='revisions'){ renderBudgetRevisions(c); return; }
   const recs = [...state[ek]].sort((a,b)=>String(b.date||b.createdAt||'').localeCompare(String(a.date||a.createdAt||'')));
   setHeader(SECTION_META[route.section][0], SECTION_META[route.section][1], newBtn(ek));
   c.innerHTML = `<div style="font-size:13px;opacity:.75;margin-bottom:10px">${esc(intro)}</div>` + (ek==='limits'?'':tabsHtml(['Pending','Approved','Rejected'], route.params.status, v=>`goTo('${route.section}',{status:'${v}'})`)).replace(/^$/,'') +
@@ -1216,7 +1212,9 @@ function renderAllocations(c, kind){
   const tot = sum(recs,a=>a.amount), sp = sum(recs,a=>spentOfAlloc(a.id)), cm = sum(recs,a=>committedOfAlloc(a.id));
   setHeader('Budget Allocations', kind+' Allocations', newBtn('allocations','New '+kind+' Allocation',{kind}));
   c.innerHTML = `<div class="stat-grid"><div class="stat-card"><div class="num">${fmtMoney(tot)}</div><div class="lbl">Allocated</div></div><div class="stat-card"><div class="num">${fmtMoney(sp)}</div><div class="lbl">Spent</div></div><div class="stat-card"><div class="num">${fmtMoney(cm)}</div><div class="lbl">Committed</div></div><div class="stat-card gold"><div class="num">${fmtMoney(tot-sp-cm)}</div><div class="lbl">Remaining</div></div></div>
-    <div class="panel"><div class="panel-body">${renderEntityTable('allocations', recs, {preset:{kind}, emptyHint: state.budgets.length ? 'Split a budget across '+kind.toLowerCase()+'s.' : 'Create a budget first, then split it across '+kind.toLowerCase()+'s.'})}</div></div>`;
+    <div class="panel"><div class="panel-head"><h3>${kind} Budget vs Actual</h3></div><div class="panel-body"><div style="height:280px"><canvas id="allocationPerformanceChart"></canvas></div></div></div>
+    <div class="panel"><div class="panel-body">${renderEntityTable('allocations', recs, {preset:{kind}, emptyHint: state.budgets.length ? 'Split an approved budget across '+kind.toLowerCase()+'s.' : 'Create and approve a budget first, then split it across '+kind.toLowerCase()+'s.'})}</div></div>`;
+  const canvas=document.getElementById('allocationPerformanceChart'); if(canvas&&typeof Chart==='function'){const labels=[...new Set(recs.map(a=>a.target||'Unassigned'))];const planned=labels.map(n=>sum(recs.filter(a=>(a.target||'Unassigned')===n),a=>a.amount));const actual=labels.map(n=>sum(recs.filter(a=>(a.target||'Unassigned')===n),a=>spentOfAlloc(a.id))); if(window.acxAllocationChart)window.acxAllocationChart.destroy();window.acxAllocationChart=new Chart(canvas.getContext('2d'),{type:'bar',data:{labels,datasets:[{label:'Allocated',data:planned},{label:'Actual',data:actual}]},options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true}},plugins:{legend:{position:'top'}}}});} 
 }
 
 /* ---------- 4. Control ---------- */
