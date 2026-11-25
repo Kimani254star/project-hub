@@ -507,7 +507,10 @@ function loadState(companyId){
 }
 function saveState(){
   if(!CURRENT_USER) return;
-  localStorage.setItem(dataKeyFor(CURRENT_USER.companyId), JSON.stringify(state));
+  /* records imported from Books / Plans (_bk) are read-only copies: never saved into this app's own cloud data */
+  const out = Object.assign({}, state);
+  ['budgets','categories','expenses'].forEach(k=>{ out[k] = (state[k]||[]).filter(r=>!r._bk); });
+  localStorage.setItem(dataKeyFor(CURRENT_USER.companyId), JSON.stringify(out));
 }
 
 /* ---------- Auth (shared login with Acacia Books apps) ---------- */
@@ -516,7 +519,7 @@ const SESSION_KEY = 'acaciaCrmSession';
 let CURRENT_USER = null;
 
 AcaciaCloud.init({app:'Budget', dataKey:dataKeyFor});
-AcaciaCloud.onRemote(function(){ if(!CURRENT_USER) return; state = loadState(CURRENT_USER.companyId); if(!state.settings.company.name) state.settings.company.name = CURRENT_USER.company; }, function(){ if(!CURRENT_USER) return; render(); });
+AcaciaCloud.onRemote(function(){ if(!CURRENT_USER) return; state = loadState(CURRENT_USER.companyId); if(!state.settings.company.name) state.settings.company.name = CURRENT_USER.company; try{ bkMerge(); }catch(e){} }, function(){ if(!CURRENT_USER) return; render(); });
 function getUsers(){
   try{ return JSON.parse(localStorage.getItem(USERS_KEY) || '[]'); }catch(e){ return []; }
 }
@@ -617,6 +620,7 @@ function __enterAppLocal(user){
   CURRENT_USER = user;
   state = loadState(user.companyId);
   if(!state.settings.company.name) state.settings.company.name = user.company;
+  try{ bkMerge(); bkStart(); }catch(e){ console.warn(e); }
   document.getElementById('authScreen').style.display = 'none'; hpHideHome();
   document.getElementById('app').classList.add('ready');
   document.getElementById('sidebarUser').innerHTML = `<div style="font-weight:700;color:#fff;">${esc(user.name)}</div><div style="font-size:12px;">${esc(user.company)}</div>`;
@@ -923,6 +927,7 @@ function goTo(section, params){
 /* ---------- generic modal ---------- */
 let modalCtx = null;
 function openEntityModal(entityKey, recordId, preset){
+  { const r0 = recordId && (state[entityKey]||[]).find(r=>r.id===recordId); if(r0 && r0._bk){ toast('This comes from Acacia Books / Plans. Change it there and it updates here.'); return; } }
   const schema = ENTITIES[entityKey];
   const rec = recordId ? state[entityKey].find(r=>r.id===recordId) : Object.assign({}, schema.defaults ? schema.defaults() : {}, preset||{});
   modalCtx = {entityKey, recordId, record: Object.assign({}, rec)};
@@ -950,6 +955,7 @@ function previewRecord(entityKey, id){
   document.getElementById('modalOverlay').classList.add('open');
 }
 function cloneRecord(entityKey, id){
+  { const r0 = (state[entityKey]||[]).find(r=>r.id===id); if(r0 && r0._bk){ toast('This comes from Acacia Books / Plans. Change it there and it updates here.'); return; } }
   const schema = ENTITIES[entityKey], rec = state[entityKey].find(r=>r.id===id); if(!rec) return;
   const copy = JSON.parse(JSON.stringify(rec));
   copy.id = uid(entityKey); copy.createdAt = todayISO();
@@ -995,6 +1001,7 @@ function closeModal(){
   modalCtx = null;
 }
 function deleteRecord(entityKey, id){
+  { const r0 = (state[entityKey]||[]).find(r=>r.id===id); if(r0 && r0._bk){ toast('This comes from Acacia Books / Plans. Delete it there and it disappears here.'); return; } }
   const dependents = entityKey==='budgets' ? ['allocations','expenses','commitments','revisions'].filter(k=>state[k].some(r=>r.budgetId===id)) : entityKey==='allocations' ? ['expenses','commitments'].filter(k=>state[k].some(r=>r.allocationId===id)) : [];
   if(dependents.length){ toast('Cannot delete: it is still used by '+dependents.join(', ')+'. Remove those first.'); return; }
   if(!confirm('Delete this '+ENTITIES[entityKey].label.toLowerCase()+'? This cannot be undone.')) return;
@@ -1317,3 +1324,121 @@ function resetAllData(){ if(!confirm('This will permanently erase all Acacia Bud
 document.getElementById('modalOverlay').addEventListener('click', e=>{ if(e.target.id==='modalOverlay') closeModal(); });
 updateThemeToggleIcon();
 checkSessionOnLoad();
+
+
+/* =========================================================
+   BOOKS + PLANS -> BUDGET  (same company login, read-only)
+   Reads what Acacia Books has in its Budgets module (budgets, actuals) and its Plans Hub
+   (plans, plan costs) through the acx_books_budget_feed() function (see acacia_budget_plans_sync.sql)
+   and shows it inside this app next to the budgets created here.
+   Imported rows carry _bk:true: they are never saved to this app's own data and cannot be edited here.
+   ========================================================= */
+let BK_TIMER = 0;
+const bkCacheKey = c => 'acx_bkfeed_' + c;
+const bkNorm = v => String(v==null?'':v).trim().toLowerCase().replace(/\s+/g,' ');
+function bkHash(str){ let h=5381; str=String(str); for(let i=0;i<str.length;i++){ h=((h<<5)+h+str.charCodeAt(i))|0; } return (h>>>0).toString(36); }
+const BK_MONTHS_SHORT = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+function bkMonthName(m){ const i = BK_MONTHS_SHORT.indexOf(String(m||'').trim().slice(0,3).toLowerCase()); return i<0 ? '' : MONTHS[i]; }
+function bkYear(e){ const y = parseInt(e&&e.year,10); if(y) return y; const m = String((e&&e.month)||'').trim(); return /^\d{4}$/.test(m) ? Number(m) : curYear(); }
+function bkFeed(){ try{ return JSON.parse(localStorage.getItem(bkCacheKey(CURRENT_USER.companyId))||'null'); }catch(e){ return null; } }
+
+function bkMerge(){
+  if(!state || !CURRENT_USER) return;
+  ['budgets','categories','expenses'].forEach(k=>{ state[k] = (state[k]||[]).filter(r=>!r._bk); });
+  const f = bkFeed(); if(!f) return;
+  const own = state.budgets.slice();                                   /* budgets made in this app */
+  const catId = (name, type) => {
+    name = String(name||'').trim() || 'Uncategorised';
+    let c = state.categories.find(x=>bkNorm(x.name)===bkNorm(name));
+    if(!c){ c = {id:'bk_c_'+bkHash(bkNorm(name)), name, type:type||'Expense', description:'From Acacia Books', createdAt:todayISO(), _bk:true}; state.categories.push(c); }
+    return c.id;
+  };
+  const byLine = {}, byAccount = {}, byName = {};
+  const addBudget = (b, lineKey, acct) => { state.budgets.push(b); byLine[lineKey] = byLine[lineKey] || b.id; byAccount[bkNorm(acct)] = byAccount[bkNorm(acct)] || b.id; byName[bkNorm(b.name)] = byName[bkNorm(b.name)] || b.id; };
+
+  /* Books Budgets module: one budget per budget line */
+  (Array.isArray(f.budgets)?f.budgets:[]).forEach((l,i)=>{
+    if(!l || !l.account) return;
+    const months = Array.isArray(l.months)?l.months:[];
+    const amount = months.reduce((n,m)=>n+(Number(m&&m.amount)||0),0);
+    const first = months[0] || {};
+    const per = String(l.period||'').toLowerCase();
+    const type = /quarter/.test(per) ? 'Quarterly' : /month/.test(per) ? 'Monthly' : 'Annual';
+    const period = type==='Annual' ? 'Full year' : type==='Quarterly' ? (/^Q[1-4]$/i.test(first.month)?String(first.month).toUpperCase():'Q1') : (bkMonthName(first.month) || MONTHS[0]);
+    const dept = l.department || 'General';
+    const lineKey = bkNorm(l.account)+'|'+bkNorm(dept);
+    addBudget({
+      id:'bk_b_'+bkHash(lineKey+'|'+(l.period||'')+'|'+i), code:'BK-'+String(i+1).padStart(4,'0'),
+      name:l.account+' — '+dept, type, year:bkYear(first), period,
+      categoryId:catId(l.category||l.account,'Expense'), amount, owner:dept, status:'Approved',
+      notes:'From Acacia Books Budgets', createdAt:todayISO(), _bk:true
+    }, lineKey, l.account);
+  });
+
+  /* Books Plans Hub: a plan with a target amount that is not a revenue goal becomes a budget line */
+  const plans = Array.isArray(f.plans)?f.plans:[];
+  plans.forEach((p,i)=>{
+    if(!p || !p.title) return;
+    const linked = bkNorm(p.linkedBudget);
+    if(linked) return;                                                 /* its costs go to the linked budget below */
+    if(/sales|revenue/i.test(String(p.goalType||''))) return;
+    const amount = Number(p.targetAmount)||0; if(amount<=0) return;
+    addBudget({
+      id:'bk_p_'+bkHash(bkNorm(p.title)), code:'PLN-'+String(i+1).padStart(4,'0'),
+      name:'Plan: '+p.title, type:'Annual', year:(p.startDate&&parseInt(String(p.startDate).slice(0,4),10))||curYear(), period:'Full year',
+      categoryId:catId('Plans','Expense'), amount, owner:p.department||'', status:'Approved',
+      notes:'From Acacia Plans · '+(p.goalType||'')+(p.priority?' · '+p.priority+' priority':''), createdAt:todayISO(), _bk:true
+    }, 'plan|'+bkNorm(p.title), 'plan: '+p.title);
+  });
+
+  const findBudget = (account, dept) => byLine[bkNorm(account)+'|'+bkNorm(dept||'General')] || byAccount[bkNorm(account)] || null;
+
+  /* Books actuals -> expenses against the matching budget line */
+  (Array.isArray(f.actuals)?f.actuals:[]).forEach((a,i)=>{
+    if(!a || !a.account) return;
+    const bid = findBudget(a.account, a.department); if(!bid) return;
+    (Array.isArray(a.months)?a.months:[]).forEach((m,j)=>{
+      const amt = Number(m&&m.amount)||0; if(!amt) return;
+      const mi = BK_MONTHS_SHORT.indexOf(String(m.month||'').slice(0,3).toLowerCase());
+      const date = m.posted || (bkYear(m)+'-'+String((mi<0?0:mi)+1).padStart(2,'0')+'-01');
+      state.expenses.push({id:'bk_e_'+bkHash(a.account+'|'+(a.department||'')+'|'+i+'|'+j), date, description:a.account+' (actual from Books)', vendor:'', budgetId:bid, allocationId:'', categoryId:catId(a.category||a.account,'Expense'), amount:amt, _bk:true});
+    });
+  });
+
+  /* Plan costs (Track Expenses in Plans Hub) -> expenses on the plan's linked budget, else on the plan's own budget line */
+  (Array.isArray(f.planCosts)?f.planCosts:[]).forEach((c,i)=>{
+    if(!c || !c.planTitle) return;
+    const plan = plans.find(p=>p && bkNorm(p.title)===bkNorm(c.planTitle)); if(!plan) return;
+    const lk = bkNorm(plan.linkedBudget);
+    const bid = (lk && (byName[lk] || byAccount[lk] || own.find(b=>bkNorm(b.name)===lk)&&own.find(b=>bkNorm(b.name)===lk).id)) || byLine['plan|'+bkNorm(plan.title)];
+    const amt = Number(c.amount)||0; if(!bid || !amt) return;
+    state.expenses.push({id:'bk_x_'+bkHash(c.planTitle+'|'+(c.id||i)+'|'+(c.date||'')+'|'+amt), date:String(c.date||todayISO()).slice(0,10), description:(c.description||c.category||'Plan cost')+' · plan: '+plan.title, vendor:c.vendor||'', budgetId:bid, allocationId:'', categoryId:catId(c.category||'Plans','Expense'), amount:amt, _bk:true});
+  });
+}
+
+async function bkPull(){
+  if(!CURRENT_USER || !AcaciaCloud.isCloudId(CURRENT_USER.companyId)) return false;
+  try{
+    const f = await AcaciaCloud.rpc('acx_books_budget_feed', {p_company:CURRENT_USER.companyId, p_login:String(CURRENT_USER.email||'').toLowerCase()});
+    if(!f || typeof f!=='object') return false;
+    const next = JSON.stringify(f), key = bkCacheKey(CURRENT_USER.companyId);
+    if(localStorage.getItem(key)===next) return false;                /* nothing new from Books / Plans */
+    localStorage.setItem(key, next);
+    return true;
+  }catch(e){ console.warn('Books budget feed:', e && e.message); return false; }
+}
+async function bkRefresh(){
+  if(!CURRENT_USER) return;
+  const changed = await bkPull();
+  if(!changed) return;
+  bkMerge();
+  const a = document.activeElement;
+  const typing = !!a && (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.isContentEditable);
+  if(!typing && !document.getElementById('modalOverlay').classList.contains('open')) render();
+}
+function bkStart(){
+  clearInterval(BK_TIMER);
+  bkRefresh();
+  BK_TIMER = setInterval(function(){ if(!document.hidden) bkRefresh(); }, 30000);
+  if(!window.__bkVis){ window.__bkVis = 1; document.addEventListener('visibilitychange', function(){ if(!document.hidden) bkRefresh(); }); }
+}
