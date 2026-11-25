@@ -762,10 +762,9 @@ const ENTITIES = {
       {key:'type', label:'Budget Type', type:'select', options:BUDGET_TYPES, required:true},
       {key:'year', label:'Fiscal Year', type:'number', required:true},
       {key:'period', label:'Period (Q1–Q4 or month; Annual = Full year)', type:'select', options:PERIODS},
-      {key:'categoryId', label:'Budget Category', type:'select', options:catOpts()},
       {key:'amount', label:'Budget Amount', type:'number', required:true, min:0},
-      {key:'owner', label:'Budget Owner', type:'text'},
-      {key:'status', label:'Status', type:'select', options:BUDGET_STATUSES},
+      {key:'owner', label:'Department', type:'text', required:true},
+      {key:'status', label:'Status', type:'select', options:['Pending Approval','Draft','Approved','Rejected','Closed']},
       {key:'notes', label:'Notes', type:'textarea'}
     ],
     columns: ['code','name','type','period','year','categoryId','amount','used','status','flow'],
@@ -899,8 +898,8 @@ const ENTITIES = {
 /* ---------- navigation ---------- */
 const NAV_GROUPS = [
   {key:'dash', label:'Budget Dashboard', items:[['budgetOverview','Budget Overview'],['budgetUtilization','Budget Utilization'],['spendingSummary','Spending Summary']]},
-  {key:'mgmt', label:'Budget Management', items:[['createBudget','Create Budget'],['annualBudgets','Annual Budgets'],['monthlyBudgets','Monthly Budgets'],['quarterlyBudgets','Quarterly Budgets'],['budgetCategories','Budget Categories']]},
-  {key:'alloc', label:'Budget Allocations', items:[['accountAllocations','Account Allocations'],['departmentAllocations','Department Allocations'],['projectAllocations','Project Allocations']]},
+  {key:'mgmt', label:'Budget Management', items:[['createBudget','Create Budget'],['annualBudgets','Annual Budgets'],['monthlyBudgets','Monthly Budgets'],['quarterlyBudgets','Quarterly Budgets']]},
+  {key:'alloc', label:'Budget Allocations', items:[['departmentAllocations','Department Allocations'],['projectAllocations','Project Allocations']]},
   {key:'ctrl', label:'Budget Control', items:[['budgetApprovals','Budget Approvals'],['budgetRevisions','Budget Revisions'],['budgetTransfers','Budget Transfers'],['spendingLimits','Spending Limits'],['committedExpenditure','Committed Expenditure']]},
   {key:'fcst', label:'Forecasting', items:[['incomeForecast','Income Forecast'],['expenseForecast','Expense Forecast'],['cashFlowForecast','Cash Flow Forecast']]},
   {key:'rpts', label:'Budget Reports', items:[['rptBudgetVsActual','Budget vs Actual'],['rptBudgetVariance','Budget Variance'],['rptUtilization','Budget Utilization Report'],['rptDepartment','Departmental Budget Report'],['rptProject','Project Budget Report']]}
@@ -1163,15 +1162,28 @@ function renderSpending(c){
 
 /* ---------- 2. Budget management ---------- */
 function renderCreateBudget(c){
-  const sch = ENTITIES.budgets, rec = sch.defaults();
-  c.innerHTML = `<div class="panel"><div class="panel-head"><h3>New Budget</h3></div><div class="panel-body" id="cbForm">
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:4px 18px">${sch.fields.filter(f=>f.key!=='status').map(f=>renderField(f,rec)).join('')}</div>
+  c.innerHTML = `<div class="panel"><div class="panel-head"><h3>1. Plan Budget Allocation</h3><span class="badge">Planned</span></div><div class="panel-body" id="cbForm">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px 18px">
+      <div><label class="field-label">Account / Budget Line</label><input class="cb-field" data-key="name" placeholder="Executive Salaries, Cloud Hosting, Logistics" required></div>
+      <div><label class="field-label">Department</label><input class="cb-field" data-key="owner" list="cbDepartments" placeholder="Select or enter department" required><datalist id="cbDepartments">${(state.settings.departments||[]).map(x=>`<option value="${esc(typeof x==='string'?x:x.name||x.label||'')}">`).join('')}</datalist></div>
+      <div><label class="field-label">Period Cycle</label><select class="cb-field" id="cbCycle" data-key="type"><option value="Annual">Annual</option><option value="Monthly">Monthly</option><option value="Quarterly">Quarterly</option></select></div>
+      <div><label class="field-label">Timeframe</label><select class="cb-field" id="cbPeriod" data-key="period"><option value="Full year">Full year</option>${MONTHS.map(m=>`<option value="${m}">${m}</option>`).join('')}<option value="Q1">Q1</option><option value="Q2">Q2</option><option value="Q3">Q3</option><option value="Q4">Q4</option></select></div>
+      <div><label class="field-label">Fiscal Year</label><input class="cb-field" type="number" min="2000" max="2100" data-key="year" value="${curYear()}"></div>
+      <div style="grid-column:1/-1"><label class="field-label">Target Allocation (${esc(state.settings.currency||'KES')})</label><input class="cb-field" type="number" min="0" step="0.01" data-key="amount" placeholder="0.00" required></div>
+      <div style="grid-column:1/-1"><label class="field-label">Notes / Staged period values (optional)</label><textarea class="cb-field" data-key="notes" rows="2" placeholder="Optional notes or monthly / quarterly breakdown"></textarea></div>
+    </div>
     <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" onclick="createBudgetSubmit('Draft')">Save as Draft</button><button class="btn primary" onclick="createBudgetSubmit('Pending Approval')">Submit for Approval</button></div>
-    <div style="font-size:12px;opacity:.7;margin-top:10px">Only approved budgets can be spent against. Annual budgets cover the full year; for Monthly or Quarterly budgets pick the month or quarter.</div></div></div>`;
+    <div style="font-size:12px;opacity:.7;margin-top:10px">This form follows the original Acacia Books budget allocation format. Annual budgets cover the full year; Monthly or Quarterly budgets use the selected timeframe.</div></div></div>`;
+  const cyc=document.getElementById('cbCycle'), per=document.getElementById('cbPeriod');
+  if(cyc&&per) cyc.addEventListener('change',()=>{ const t=cyc.value; per.value=t==='Annual'?'Full year':t==='Monthly'?MONTHS[new Date().getMonth()]:'Q1'; });
 }
 function createBudgetSubmit(status){
-  const draft = ENTITIES.budgets.defaults(); draft.status = status;
+  const draft = ENTITIES.budgets.defaults(); draft.status = status==='Draft'?'Draft':'Pending Approval';
   document.querySelectorAll('#cbForm [data-key]').forEach(i=>{ draft[i.dataset.key] = i.value; });
+  draft.type = document.getElementById('cbCycle')?.value || draft.type;
+  draft.period = document.getElementById('cbPeriod')?.value || draft.period;
+  draft.year = Number(draft.year)||curYear(); draft.amount=Number(draft.amount)||0;
+  if(!draft.name || !draft.amount || !draft.owner){ toast('Enter the budget line, department and allocation amount.'); return; }
   if(!commitRecord('budgets', draft, null)) return;
   logApproval('Budget', draft.code+' '+draft.name, status==='Draft' ? 'Created as draft' : 'Submitted');
   saveState(); toast('Budget '+draft.code+' saved.');
